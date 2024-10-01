@@ -1,0 +1,1 @@
+python train.py --oadat_dir /mydata/dlbirhoui/firat/OADAT --num_epochs 1 --gpus 1 --batch_size 64 --num_workers 2

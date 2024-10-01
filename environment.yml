@@ -1,0 +1,26 @@
+name: "base"
+# WARNING : As Renku makes use of mamba for more efficient package builds, please use the popular "conda-forge" channel
+# For more details : https://mamba.readthedocs.io/en/latest/user_guide/troubleshooting.html#mixing-the-defaults-and-conda-forge-channels
+# Using the defaults channel from Anaconda can easily result in getting your
+# laptop, CI pipeline, etc. blacklisted by Anaconda which makes building packages
+# impossible. To get permission to use Anaconda again you need to either pay or prove that
+# you meet the requirements for a free license. Using the conda-forge channel avoids 
+# these restrictions completely.
+channels:
+  - conda-forge
+dependencies:
+  - python==3.10.*
+  - h5py==3.8.0
+  - scipy==1.8
+  - scikit-image
+  - scikit-learn==1.1
+  - matplotlib
+  - pip
+  - pip:
+    - torch 
+    - torchvision 
+    - torchaudio
+    - lightning
+    - opencv-python-headless
+    - tensorboard
+prefix: "/opt/conda"
