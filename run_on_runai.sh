@@ -1,1 +1,1 @@
-python train.py --oadat_dir /mydata/dlbirhoui/firat/OADAT --num_epochs 50 --gpus 1 --batch_size 32 --num_workers 4 --job_name ddim-test-model-summary
+python train.py --oadat_dir /mydata/dlbirhoui/firat/OADAT --num_epochs 50 --gpus 1 --batch_size 32 --num_workers 4 --job_name ddim-scaled-noise
