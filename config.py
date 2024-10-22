@@ -18,6 +18,9 @@ class TrainingConfig:
     seed: int = 42
     num_train_timesteps: int = 1000
     sample_dir: str = None
+    sample_num: int = 11
+    fixed_image_paths: dict[str, str] = None
+
 
 
 def parse_arguments() -> argparse.Namespace:
