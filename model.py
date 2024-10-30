@@ -32,12 +32,16 @@ class DiffusionModel(LightningModule):
                 "DownBlock2D",
                 "DownBlock2D",
                 "DownBlock2D",
+                # add one more
+                # "DownBlock2D",
                 "AttnDownBlock2D",
                 "DownBlock2D",
             ),
             up_block_types=(
                 "UpBlock2D",
                 "AttnUpBlock2D",
+                # add one more
+                # "UpBlock2D",
                 "UpBlock2D",
                 "UpBlock2D",
                 "UpBlock2D",
@@ -117,7 +121,9 @@ class DiffusionModel(LightningModule):
         num_images = len(images)
         num_rows = 2
         num_cols = math.ceil(num_images / num_rows)
-        fig, axs = plt.subplots(num_rows, num_cols, figsize=(num_cols * 5, num_rows * 5))
+        fig, axs = plt.subplots(
+            num_rows, num_cols, figsize=(num_cols * 5, num_rows * 5)
+        )
         axs = axs.ravel()
 
         for i, img in enumerate(images):
@@ -128,7 +134,7 @@ class DiffusionModel(LightningModule):
             fig.colorbar(im, ax=ax)
 
         for j in range(i + 1, len(axs)):
-            axs[j].axis('off')
+            axs[j].axis("off")
 
         plt.savefig(local_path, bbox_inches="tight")
         plt.close()

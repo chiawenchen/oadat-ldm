@@ -1,0 +1,1 @@
+python train_classifier.py --oadat_dir /mydata/dlbirhoui/firat/OADAT --num_epochs 80 --gpus 1 --batch_size 256 --num_workers 4 --job_name resnet_classifier

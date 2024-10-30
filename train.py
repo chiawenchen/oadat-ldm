@@ -31,6 +31,7 @@ def main() -> None:
         data_path=args.oadat_dir,
         batch_size=args.batch_size,
         num_workers=args.num_workers,
+        mix_swfd_scd=args.mix_swfd_scd,
     )
 
     # Set up noise scheduler
@@ -85,7 +86,7 @@ def main() -> None:
         accelerator="auto",
         devices=args.gpus,
         logger=logger,
-        callbacks=[checkpoint_callback, ModelSummary(max_depth=-1)],
+        callbacks=[checkpoint_callback, ModelSummary(max_depth=2)], # depth=-1 for full summary
         log_every_n_steps=50,
         check_val_every_n_epoch=1,
         num_sanity_val_steps=0,
