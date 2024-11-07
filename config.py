@@ -13,7 +13,7 @@ class TrainingConfig:
     gradient_accumulation_steps: int = 1
     learning_rate: float = 1e-4
     lr_warmup_epochs: int = 5
-    save_image_epochs: int = 1
+    save_image_epochs: int = 10
     mixed_precision: str = (
         "fp16"  # `no` for float32, `fp16` for automatic mixed precision
     )
@@ -46,5 +46,11 @@ def parse_arguments() -> argparse.Namespace:
         type=bool,
         default=False,
         help="Mix SWFD and SCD datasets (True or False)",
+    )
+    parser.add_argument(
+        "--balance_class",
+        type=bool,
+        default=False,
+        help="balance classes for classifier training (True or False)",
     )
     return parser.parse_args()

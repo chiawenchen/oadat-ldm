@@ -5,7 +5,7 @@ import torch
 from config import TrainingConfig, parse_arguments
 from datamodule import OADATDataModule
 from model import DiffusionModel
-from utils import get_last_checkpoint
+from utils import get_last_checkpoint, transforms
 from lightning.pytorch import Trainer
 from lightning.pytorch.callbacks import ModelCheckpoint, ModelSummary
 from lightning.pytorch.loggers import WandbLogger
@@ -32,6 +32,7 @@ def main() -> None:
         batch_size=args.batch_size,
         num_workers=args.num_workers,
         mix_swfd_scd=args.mix_swfd_scd,
+        transforms=transforms
     )
 
     # Set up noise scheduler

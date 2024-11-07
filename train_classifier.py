@@ -15,12 +15,14 @@ from torch.utils.data import DataLoader
 from torch.optim.lr_scheduler import LinearLR
 from torchvision import models
 from torchvision.transforms import v2
-from torchmetrics.classification import BinaryAccuracy, BinaryF1Score, BinaryPrecision, BinaryRecall, BinarySpecificity
+from torchmetrics.classification import BinaryAccuracy, BinaryF1Score, BinaryPrecision, BinaryRecall
 
 from diffusers import DDIMScheduler
 from config import TrainingConfig, parse_arguments
-from utils import get_last_checkpoint
+from utils import get_last_checkpoint, transforms
 import dataset
+
+from UnetClassifier import UnetClassifier
 
 
 class NoisyDataset(dataset.Dataset):
@@ -77,13 +79,9 @@ class NoisyOADATDataModule(LightningDataModule):
         self.data_path = data_path
         self.batch_size = batch_size
         self.num_workers = num_workers
-        self.transforms = v2.Compose(
-            [
-                v2.Lambda(lambda x: np.clip(x / np.max(x), a_min=-0.2, a_max=None)),
-                v2.Lambda(lambda x: (x - x.min()) / (x.max() - x.min())),
-            ]
-        )
+        self.transforms = transforms
         self.noise_scheduler = noise_scheduler
+        self.class_weights = torch.tensor([1, 1])
 
     def load_dataset(
         self,
@@ -107,13 +105,9 @@ class NoisyOADATDataModule(LightningDataModule):
             indices_swfd = np.load(
                 "/mydata/dlbirhoui/chia/oadat-ldm/train_sc_BP_indices.npy"
             )
-            indices_scd = np.arange(0, 20000 * 0.95)  # 95 % for training
+            indices_scd = np.arange(0, 20000)
 
             # Mix SWFD and SCD datasets (80% for training, 20% for validation)
-            # shuffle indices
-            random.shuffle(indices_swfd)
-            random.shuffle(indices_scd)
-
             split_idx_swfd = int(len(indices_swfd) * 0.8)
             split_idx_scd = int(len(indices_scd) * 0.8)
 
@@ -147,6 +141,12 @@ class NoisyOADATDataModule(LightningDataModule):
                 [self.val_obj_swfd, self.val_obj_scd]
             )
 
+            count_0 = len(train_indices_scd)
+            count_1 = len(train_indices_swfd)
+            class_0_weight = (count_0 + count_1) / 2.0 * count_0
+            class_1_weight = (count_0 + count_1) / 2.0 * count_1
+            self.class_weights = torch.tensor([class_0_weight, class_1_weight], dtype=torch.float32)
+
         elif stage == "test":
             self.test_swfd_indices = np.load(
                 "/mydata/dlbirhoui/chia/oadat-ldm/test_sc_BP_indices.npy"
@@ -163,6 +163,9 @@ class NoisyOADATDataModule(LightningDataModule):
             self.test_obj = torch.utils.data.ConcatDataset(
                 self.test_swfd_obj, self.test_scd_obj
             )
+
+    def get_class_weights(self) -> torch.Tensor:
+        return self.class_weights
 
     def train_dataloader(self) -> DataLoader:
         return DataLoader(
@@ -190,11 +193,12 @@ class NoisyOADATDataModule(LightningDataModule):
 
 
 class ResNetClassifier(LightningModule):
-    def __init__(self, num_classes=2, learning_rate=1e-4, num_timesteps=1000, embedding_dim=128):
+    def __init__(self, num_classes=2, learning_rate=1e-4, num_timesteps=1000, embedding_dim=128, class_weights=None):
         super(ResNetClassifier, self).__init__()
         self.learning_rate = learning_rate
         self.num_timesteps = num_timesteps
         self.embedding_dim = embedding_dim
+        self.class_weights = class_weights
 
         # Load pre-trained ResNet and adapt for grayscale input and binary classification
         self.model = models.resnet18(weights='DEFAULT')
@@ -216,7 +220,10 @@ class ResNetClassifier(LightningModule):
         )
 
         # Loss function and metrics
-        self.criterion = nn.CrossEntropyLoss()
+        if self.class_weights != None:
+            self.criterion = nn.CrossEntropyLoss(weight=class_weights)
+        else:
+            self.criterion = nn.CrossEntropyLoss()
         self.train_accuracy = BinaryAccuracy()
         self.val_accuracy = BinaryAccuracy()
         self.train_precision = BinaryPrecision()
@@ -323,11 +330,11 @@ class ResNetClassifier(LightningModule):
         )
         return [optimizer], [lr_scheduler]
 
-
 torch.set_float32_matmul_precision("medium")
 
 
 def main():
+
     # Parse command-line arguments
     args = parse_arguments()
 
@@ -362,7 +369,13 @@ def main():
     )
  
     # Model
-    model = ResNetClassifier(num_classes=2)
+    # model = ResNetClassifier(num_classes=2)
+    model = UnetClassifier(
+        num_classes=2,
+        learning_rate=1e-4,
+        num_timesteps=config.num_train_timesteps,
+        class_weights=datamodule.get_class_weights() if args.balance_class else None
+    )
 
     # Set up checkpoint callback
     ckpt_dir = os.path.join(config.output_dir, "checkpoints/classifier", args.job_name)
@@ -387,6 +400,7 @@ def main():
             checkpoint_callback,
         ],
         check_val_every_n_epoch=1,
+        precision=16,
     )
     # Load the latest checkpoint if available
     latest_ckpt = get_last_checkpoint(ckpt_dir)

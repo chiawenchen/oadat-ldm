@@ -24,6 +24,7 @@ class DiffusionModel(LightningModule):
             in_channels=1,
             out_channels=1,
             layers_per_block=2,
+            # block_out_channels=(32, 32, 64, 64, 64, 128, 128),  # small model one more layer
             block_out_channels=(32, 32, 64, 64, 128, 128),  # small model
             # block_out_channels=(64, 64, 128, 128, 256, 256), # medium model
             # block_out_channels=(128, 128, 256, 256, 512, 512), # large model
@@ -84,22 +85,26 @@ class DiffusionModel(LightningModule):
                     f"Image is not in the range [0, 1]. Min: {torch.min(image)}, Max: {torch.max(image)}"
                 )
                 # clip the image to [0, 1]
-                image = torch.clamp(image, 0, 1)
+                image = torch.clamp((image + 1) / 2.0, 0, 1)
 
-        # Convert the tensor to a PIL image
-        image = v2.ToPILImage()(image.cpu())
+        # Convert the tensor to a PIL image # TODO: clean it
+        plt.figure(figsize=(6, 6)) 
+        im = plt.imshow(image.squeeze(0).cpu(), cmap="gray")
+        plt.colorbar(im)
+        plt.savefig(local_path, bbox_inches="tight")  # Save with specified filename
+        plt.close()
 
-        # Save image locally if required
-        if save_locally:
-            if local_path is None:
-                raise ValueError("local_path must be provided if save_locally is True")
-            image.save(local_path)
+        # # Save image locally if required
+        # if save_locally:
+        #     if local_path is None:
+        #         raise ValueError("local_path must be provided if save_locally is True")
+        #     image.save(local_path)
 
         # Log image to WandB if required
         if log_to_wandb:
             if wandb_name is None:
                 raise ValueError("wandb_name must be provided if log_to_wandb is True")
-            self.logger.experiment.log({wandb_name: [wandb.Image(image)]})
+            self.logger.experiment.log({wandb_name: [wandb.Image(local_path)]})
 
     def save_images(
         self,
@@ -116,7 +121,7 @@ class DiffusionModel(LightningModule):
                 if torch.any(torch.isinf(img)) or torch.any(torch.isnan(img)):
                     print(f"Image contains NaN or Inf values.")
             # check if the image is in the range [0, 1]
-            images = [torch.clamp(img, min=0, max=1) for img in images]
+            images = [torch.clamp((img + 1) / 2.0, min=0, max=1) for img in images]
 
         num_images = len(images)
         num_rows = 2
@@ -156,8 +161,7 @@ class DiffusionModel(LightningModule):
                 self.device
             )
 
-        clean_image = clean_images[0]  # Use the first image only
-
+        clean_image = clean_images[0]
         # save clean image
         self.save_image(
             clean_image,
@@ -178,7 +182,6 @@ class DiffusionModel(LightningModule):
             device=self.device,
         )
 
-        torch.manual_seed(self.config.seed)
         noises = torch.randn(clean_image.shape, device=self.device)
 
         noisy_images = []
@@ -200,8 +203,6 @@ class DiffusionModel(LightningModule):
             log_to_wandb=True,
             wandb_name=f"{category}_noisy",
         )
-
-        torch.seed()  # Reset the seed
 
     def configure_optimizers(
         self,
@@ -246,7 +247,7 @@ class DiffusionModel(LightningModule):
 
     def validation_step(self, batch: torch.Tensor, batch_idx: int) -> torch.Tensor:
         # fixed seed during validation to ensure the noise is always the same
-        # torch.manual_seed(self.config.seed)
+        torch.manual_seed(self.config.seed)
         clean_images = batch
         noises = torch.randn(clean_images.shape, device=self.device)
         bs = clean_images.shape[0]
@@ -263,6 +264,9 @@ class DiffusionModel(LightningModule):
         val_loss = self.loss_fn(noise_preds, noises)
 
         self.log("val_loss", val_loss, on_step=False, on_epoch=True, prog_bar=True)
+        
+        # reset seed
+        torch.seed()
 
         return val_loss
 
@@ -318,7 +322,8 @@ class DiffusionModel(LightningModule):
 
     def on_validation_epoch_end(self) -> None:
         if (
-            self.current_epoch % self.config.save_image_epochs == 0
+            self.current_epoch == 0
+            or self.current_epoch % self.config.save_image_epochs == 0
             or self.current_epoch == self.config.num_epochs - 1
         ):
             # Define the linearly spaced timesteps

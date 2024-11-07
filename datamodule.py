@@ -8,7 +8,7 @@ from torchvision.transforms import v2
 from lightning.pytorch import LightningDataModule
 import dataset
 from diffusers import DDIMScheduler
-
+from utils import transforms
 
 class OADATDataModule(LightningDataModule):
     def __init__(
@@ -17,17 +17,13 @@ class OADATDataModule(LightningDataModule):
         batch_size: int,
         num_workers: int = 4,
         mix_swfd_scd: bool = False,
+        transforms: v2.Compose = None
     ) -> None:
         super().__init__()
         self.data_path = data_path
         self.batch_size = batch_size
         self.num_workers = num_workers
-        self.transforms = v2.Compose(
-            [
-                v2.Lambda(lambda x: np.clip(x / np.max(x), a_min=-0.2, a_max=None)),
-                v2.Lambda(lambda x: (x - x.min()) / (x.max() - x.min())),
-            ]
-        )
+        self.transforms = transforms
         self.mix_swfd_scd = mix_swfd_scd
 
     def prepare_data(self) -> None:
@@ -112,7 +108,7 @@ class OADATDataModule(LightningDataModule):
                 "SWFD_semicircle_RawBP.h5", "sc_BP", self.test_indices
             )
 
-        self.scd_obj = self.load_dataset("SCD_RawBP.h5", "vc_BP", [0])
+        self.scd_obj = self.load_dataset("SCD_RawBP.h5", "vc_BP", [0, 1000, 2000, 3000, 4000])
 
     def train_dataloader(self) -> DataLoader:
         return DataLoader(
@@ -137,7 +133,7 @@ class OADATDataModule(LightningDataModule):
             shuffle=False,
             num_workers=self.num_workers,
         )
-
+    
     def scd_dataloader(self) -> DataLoader:
         return DataLoader(
             self.scd_obj,

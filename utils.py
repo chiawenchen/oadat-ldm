@@ -13,6 +13,11 @@ import numpy as np
 transforms = v2.Compose(
             [
                 v2.Lambda(lambda x: np.clip(x / np.max(x), a_min=-0.2, a_max=None)),
+               
                 v2.Lambda(lambda x: (x - x.min()) / (x.max() - x.min())),
+                # v2.Lambda(lambda x: (x + 0.2) / 1.2),
+                # Scale to range [-1, 1]
+                v2.Lambda(lambda x: 2 * x - 1),
+
             ]
         )
