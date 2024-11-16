@@ -385,7 +385,8 @@ class UnetClassifier(LightningModule):
                  num_classes: int = 2,  # Binary classification
                  learning_rate: float = 1e-4,
                  num_timesteps: int = 1000,
-                 class_weights: torch.Tensor = None):
+                #  class_weights: torch.Tensor = None
+                 ):
         super(UnetClassifier, self).__init__()
 
         self.im_channels = im_channels
@@ -399,7 +400,7 @@ class UnetClassifier(LightningModule):
         self.num_classes = num_classes
         self.learning_rate = learning_rate
         self.num_timesteps = num_timesteps
-        self.class_weights = class_weights
+        # self.class_weights = class_weights
 
         # Initial Convolution
         self.cv1 = nn.Conv2d(self.im_channels, self.down_ch[0], kernel_size=3, padding=1)
@@ -442,10 +443,10 @@ class UnetClassifier(LightningModule):
         )
 
         # Loss function and metrics
-        if self.class_weights != None:
-            self.criterion = nn.CrossEntropyLoss(weight=class_weights)
-        else:
-            self.criterion = nn.CrossEntropyLoss()
+        # if self.class_weights != None:
+        #     self.criterion = nn.CrossEntropyLoss(weight=class_weights)
+        # else:
+        self.criterion = nn.CrossEntropyLoss()
         self.train_accuracy = BinaryAccuracy()
         self.val_accuracy = BinaryAccuracy()
         self.train_precision = BinaryPrecision()

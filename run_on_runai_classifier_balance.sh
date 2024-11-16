@@ -1,1 +1,0 @@
-python train_classifier.py --oadat_dir /mydata/dlbirhoui/firat/OADAT --num_epochs 200 --gpus 1 --batch_size 128 --num_workers 4 --job_name unet_classifier --balance_class True

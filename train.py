@@ -5,11 +5,10 @@ import torch
 from config import TrainingConfig, parse_arguments
 from datamodule import OADATDataModule
 from model import DiffusionModel
-from utils import get_last_checkpoint, transforms
+from utils import get_last_checkpoint, transforms, get_named_beta_schedule
 from lightning.pytorch import Trainer
 from lightning.pytorch.callbacks import ModelCheckpoint, ModelSummary
 from lightning.pytorch.loggers import WandbLogger
-from diffusers import DDIMScheduler
 
 
 # the precision settings for matrix multiplications
@@ -36,12 +35,7 @@ def main() -> None:
     )
 
     # Set up noise scheduler
-    noise_scheduler = DDIMScheduler(
-        num_train_timesteps=config.num_train_timesteps,
-        beta_start=1e-5,
-        beta_end=5e-3,
-        beta_schedule="scaled_linear",
-    )
+    noise_scheduler = get_named_beta_schedule(args.noise_schedule, config.num_train_timesteps)
 
     # Set up sample image saving path
     sample_dir = os.path.join(config.output_dir, "samples", args.job_name)
@@ -102,10 +96,6 @@ def main() -> None:
 
     # Train the model
     trainer.fit(model, datamodule, ckpt_path=latest_ckpt)
-
-    # print("best model path: ", checkpoint_callback.best_model_path, "best model score: ", checkpoint_callback.best_model_score)
-    # trainer.test(datamodule=data_module, ckpt_path=checkpoint_callback.best_model_path)
-
 
 if __name__ == "__main__":
     main()

@@ -12,17 +12,17 @@ from lightning.pytorch.callbacks import ModelCheckpoint
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
-from torch.optim.lr_scheduler import LinearLR
 from torchvision import models
 from torchvision.transforms import v2
-from torchmetrics.classification import BinaryAccuracy, BinaryF1Score, BinaryPrecision, BinaryRecall
 
 from diffusers import DDIMScheduler
-from config import TrainingConfig, parse_arguments
-from utils import get_last_checkpoint, transforms
+from config import ClassifierConfig, parse_arguments
+from utils import get_last_checkpoint, transforms, get_named_beta_schedule
 import dataset
 
+from UnetAttentionClassifier import UnetAttentionClassifier
 from UnetClassifier import UnetClassifier
+from ResNetClassifier import ResNetClassifier
 
 
 class NoisyDataset(dataset.Dataset):
@@ -81,7 +81,6 @@ class NoisyOADATDataModule(LightningDataModule):
         self.num_workers = num_workers
         self.transforms = transforms
         self.noise_scheduler = noise_scheduler
-        self.class_weights = torch.tensor([1, 1])
 
     def load_dataset(
         self,
@@ -141,31 +140,11 @@ class NoisyOADATDataModule(LightningDataModule):
                 [self.val_obj_swfd, self.val_obj_scd]
             )
 
-            count_0 = len(train_indices_scd)
-            count_1 = len(train_indices_swfd)
-            class_0_weight = (count_0 + count_1) / 2.0 * count_0
-            class_1_weight = (count_0 + count_1) / 2.0 * count_1
-            self.class_weights = torch.tensor([class_0_weight, class_1_weight], dtype=torch.float32)
-
-        elif stage == "test":
-            self.test_swfd_indices = np.load(
-                "/mydata/dlbirhoui/chia/oadat-ldm/test_sc_BP_indices.npy"
-            )
-            self.test_scd_indices = np.arange(
-                20000 * 0.95, 20000
-            )  # 1000 samples for testing
-            self.test_swfd_obj = self.load_dataset(
-                "SWFD_semicircle_RawBP.h5", "sc_BP", self.test_swfd_indices, 1
-            )
-            self.test_scd_obj = self.load_dataset(
-                "SCD_RawBP.h5", "vc_BP", self.test_scd_indices, 0
-            )
-            self.test_obj = torch.utils.data.ConcatDataset(
-                self.test_swfd_obj, self.test_scd_obj
-            )
-
-    def get_class_weights(self) -> torch.Tensor:
-        return self.class_weights
+            # count_0 = len(train_indices_scd)
+            # count_1 = len(train_indices_swfd)
+            # class_0_weight = (count_0 + count_1) / 2.0 * count_0
+            # class_1_weight = (count_0 + count_1) / 2.0 * count_1
+            # self.class_weights = torch.tensor([class_0_weight, class_1_weight], dtype=torch.float32)
 
     def train_dataloader(self) -> DataLoader:
         return DataLoader(
@@ -183,153 +162,6 @@ class NoisyOADATDataModule(LightningDataModule):
             num_workers=self.num_workers,
         )
 
-    def test_dataloader(self) -> DataLoader:
-        return DataLoader(
-            self.test_obj,
-            batch_size=self.batch_size,
-            shuffle=False,
-            num_workers=self.num_workers,
-        )
-
-
-class ResNetClassifier(LightningModule):
-    def __init__(self, num_classes=2, learning_rate=1e-4, num_timesteps=1000, embedding_dim=128, class_weights=None):
-        super(ResNetClassifier, self).__init__()
-        self.learning_rate = learning_rate
-        self.num_timesteps = num_timesteps
-        self.embedding_dim = embedding_dim
-        self.class_weights = class_weights
-
-        # Load pre-trained ResNet and adapt for grayscale input and binary classification
-        self.model = models.resnet18(weights='DEFAULT')
-        self.model.conv1 = nn.Conv2d(1, 64, kernel_size=7, stride=2, padding=3, bias=False)  # Adjust for 1-channel input
-
-        # Remove the original fully connected layer (fc) and replace it with our custom layer
-        self.feature_dim = self.model.fc.in_features  # Typically 512
-        self.model.fc = nn.Identity()  # Replace fc layer with identity to prevent its application in forward pass
-
-        # Custom classification layer to accommodate concatenated image and timestep features
-        self.fc = nn.Linear(self.feature_dim + embedding_dim, num_classes)
-
-        # Timestep embedding layer
-        self.timestep_embedding = nn.Sequential(
-            nn.Embedding(num_timesteps, embedding_dim),
-            nn.Linear(embedding_dim, embedding_dim),
-            nn.SiLU(),
-            nn.Linear(embedding_dim, embedding_dim),
-        )
-
-        # Loss function and metrics
-        if self.class_weights != None:
-            self.criterion = nn.CrossEntropyLoss(weight=class_weights)
-        else:
-            self.criterion = nn.CrossEntropyLoss()
-        self.train_accuracy = BinaryAccuracy()
-        self.val_accuracy = BinaryAccuracy()
-        self.train_precision = BinaryPrecision()
-        self.val_precision = BinaryPrecision()
-        self.train_recall = BinaryRecall()
-        self.val_recall = BinaryRecall()
-        self.train_f1 = BinaryF1Score()
-        self.val_f1 = BinaryF1Score()
-        self.train_specificity = BinarySpecificity()
-        self.val_specificity = BinarySpecificity()
-
-    def forward(self, x, timesteps):
-        # Extract features using ResNet up to the replaced fc layer
-        img_features = self.model(x)  # Now outputs shape [batch_size, 512]
-
-        # Embed the timestep and reshape for concatenation
-        timestep_embed = self.timestep_embedding(timesteps)  # Shape: [batch_size, 128]
-
-        # Concatenate image features with timestep embeddings along the last dimension
-        combined_features = torch.cat([img_features, timestep_embed], dim=1)  # Shape: [batch_size, 640]
-
-        # Pass the combined features through the final classification layer
-        return self.fc(combined_features)
-
-    def training_step(self, batch, batch_idx):
-        images, labels, timesteps = batch
-        outputs = self(images, timesteps)
-        preds = torch.argmax(outputs, dim=1)
-        loss = self.criterion(outputs, labels)
-
-        # Compute metrics
-        self.train_accuracy(preds, labels)
-        self.train_precision(preds, labels)
-        self.train_recall(preds, labels)
-        self.train_specificity(preds, labels)
-        self.train_f1(preds, labels)
-
-        # Log metrics to progress bar
-        self.log("train_loss", loss, prog_bar=True)
-        self.log("train_accuracy", self.train_accuracy, prog_bar=False)
-        self.log("train_precision", self.train_precision, prog_bar=True)
-        self.log("train_recall", self.train_recall, prog_bar=True)
-        self.log("train_specificity", self.train_specificity, prog_bar=False)
-        self.log("train_f1", self.train_f1, prog_bar=True)
-        lr = self.optimizers().param_groups[0]["lr"]
-        self.log("lr", lr, on_step=False, on_epoch=True, prog_bar=True)
-
-        return loss
-
-    def validation_step(self, batch, batch_idx):
-        images, labels, timesteps = batch
-        outputs = self(images, timesteps)
-        preds = torch.argmax(outputs, dim=1)
-        loss = self.criterion(outputs, labels)
-
-        # Compute metrics
-        self.val_accuracy(preds, labels)
-        self.val_precision(preds, labels)
-        self.val_recall(preds, labels)
-        self.val_specificity(preds, labels)
-        self.val_f1(preds, labels)
-
-        # Log metrics to progress bar
-        self.log("val_loss", loss, prog_bar=True)
-        self.log("val_accuracy", self.val_accuracy, prog_bar=False)
-        self.log("val_precision", self.val_precision, prog_bar=True)
-        self.log("val_recall", self.val_recall, prog_bar=True)
-        self.log("val_specificity", self.val_specificity, prog_bar=False)
-        self.log("val_f1", self.val_f1, prog_bar=True)
-
-        return loss
-
-    def test_step(self, batch, batch_idx):
-        images, labels, timesteps = batch
-        outputs = self(images, timesteps)
-        preds = torch.argmax(outputs, dim=1)
-        loss = self.criterion(outputs, labels)
-
-        # Compute metrics
-        self.test_accuracy(preds, labels)
-        self.test_precision(preds, labels)
-        self.test_recall(preds, labels)
-        self.test_specificity(preds, labels)
-        self.test_f1(preds, labels)
-
-        # Log metrics to progress bar
-        self.log("test_loss", loss, prog_bar=True)
-        self.log("test_accuracy", self.test_accuracy, prog_bar=False)
-        self.log("test_precision", self.test_precision, prog_bar=True)
-        self.log("test_recall", self.test_recall, prog_bar=True)
-        self.log("test_specificity", self.test_specificity, prog_bar=False)
-        self.log("test_f1", self.test_f1, prog_bar=True)
-
-        return loss
-    
-    def configure_optimizers(
-        self,
-    ) -> tuple[
-        list[torch.optim.Optimizer], list[torch.optim.lr_scheduler._LRScheduler]
-    ]:
-        optimizer = torch.optim.AdamW(self.parameters(), lr=self.learning_rate)
-        lr_scheduler = LinearLR(
-            optimizer, total_iters=1, last_epoch=-1
-        )
-        return [optimizer], [lr_scheduler]
-
 torch.set_float32_matmul_precision("medium")
 
 
@@ -338,47 +170,42 @@ def main():
     # Parse command-line arguments
     args = parse_arguments()
 
+    # Set up training configuration
+    config = ClassifierConfig()
+
     # Set up logger
     logger = WandbLogger(
         project="classifier",
         name=args.job_name,
         log_model=False,
-        # config=config.__dict__,
-    )
-
-    # Set up training configuration
-    config = TrainingConfig(
-        num_epochs=args.num_epochs,
-        batch_size=args.batch_size,
+        config=config.__dict__
     )
 
     # Setup noise scheduler
-    noise_scheduler = DDIMScheduler(
-        num_train_timesteps=config.num_train_timesteps,
-        beta_start=1e-5,
-        beta_end=5e-3,
-        beta_schedule="scaled_linear",
-    )
+    noise_scheduler = get_named_beta_schedule(args.noise_schedule, config.num_timesteps)
 
     # DataModule
     datamodule = NoisyOADATDataModule(
         data_path=args.oadat_dir,
-        batch_size=config.batch_size,
+        batch_size=args.batch_size,
         num_workers=args.num_workers,
         noise_scheduler=noise_scheduler,
     )
  
     # Model
-    # model = ResNetClassifier(num_classes=2)
-    model = UnetClassifier(
-        num_classes=2,
-        learning_rate=1e-4,
-        num_timesteps=config.num_train_timesteps,
-        class_weights=datamodule.get_class_weights() if args.balance_class else None
-    )
+    if args.classifier == 'resnet':
+        model = ResNetClassifier(num_classes=2)
+    elif args.classifier == 'unet':
+        model = UnetClassifier(
+            num_timesteps=config.num_timesteps,
+        )
+    elif args.classifier == 'unet_attention':
+        model = UnetAttentionClassifier(
+            **config.__dict__
+        )
 
     # Set up checkpoint callback
-    ckpt_dir = os.path.join(config.output_dir, "checkpoints/classifier", args.job_name)
+    ckpt_dir = os.path.join("/mydata/dlbirhoui/chia/checkpoints/classifier", args.job_name)
     os.makedirs(ckpt_dir, exist_ok=True)
     checkpoint_callback = ModelCheckpoint(
         dirpath=ckpt_dir,
@@ -392,7 +219,7 @@ def main():
 
     # Trainer with Wandb logger
     trainer = Trainer(
-        max_epochs=config.num_epochs,
+        max_epochs=args.num_epochs,
         accelerator="auto",
         devices=args.gpus,
         logger=logger,

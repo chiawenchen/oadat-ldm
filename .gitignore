@@ -341,3 +341,4 @@ tags
 # lightning logs
 lightning_logs
 wandb
+*.png

@@ -34,7 +34,7 @@ class DiffusionModel(LightningModule):
                 "DownBlock2D",
                 "DownBlock2D",
                 # add one more
-                # "DownBlock2D",
+                "DownBlock2D",
                 "AttnDownBlock2D",
                 "DownBlock2D",
             ),
@@ -42,7 +42,7 @@ class DiffusionModel(LightningModule):
                 "UpBlock2D",
                 "AttnUpBlock2D",
                 # add one more
-                # "UpBlock2D",
+                "UpBlock2D",
                 "UpBlock2D",
                 "UpBlock2D",
                 "UpBlock2D",

@@ -6,9 +6,9 @@ from matplotlib import pyplot as plt
 from tqdm import tqdm
 from config import TrainingConfig
 from diffusers import DDIMScheduler
-from utils import transforms, get_last_checkpoint
-from model import DiffusionModel
-# from train_classifier import ResNetClassifier
+from utils import transforms, get_last_checkpoint, get_named_beta_schedule
+from model_one_more_layer import DiffusionModel
+from train_classifier import ResNetClassifier
 from UnetClassifier import UnetClassifier
 import dataset
 
@@ -16,10 +16,10 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print("device: ", device)
 
 
-def load_model(checkpoint_path, model_class):
+def load_model(checkpoint_path, model_class, **kwargs):
     """Load model from checkpoint."""
     print(checkpoint_path)
-    model = model_class.load_from_checkpoint(checkpoint_path)
+    model = model_class.load_from_checkpoint(checkpoint_path, **kwargs)
     model.to(device)
     model.eval()
     return model
@@ -33,52 +33,39 @@ def prepare_images(data_path, fname, key, indices):
     images = [torch.tensor(img, device=device, dtype=torch.float32).unsqueeze(0) for img in dataset_obj]
     return torch.cat(images, dim=0)
 
-
-def classifier_gradient(x, t, y, classifier, scale=1.0):
-    """Compute the classifier gradient."""
-    x.requires_grad_(True)
-    logits = classifier(x, t)
-    log_probs = F.log_softmax(logits, dim=-1)
-    print("log_probs: ", log_probs.tolist()[0])
-    selected = log_probs[range(len(logits)), y.view(-1)]
-    grad = torch.autograd.grad(selected.sum(), x)[0]
-    return grad * scale
-
-
-def classifier_guided_sampling(model, classifier, images, timestep, target_class=1, classifier_scale=1.0):
-    """Perform classifier-guided diffusion sampling for a batch of images."""
-    denoised_images = images
-    y = torch.full((images.size(0),), target_class, dtype=torch.long, device=device)
-
-    for t in tqdm(range(timestep, -1, -1), desc="Sampling with Classifier Guidance"):
-        t_tensor = torch.full((denoised_images.size(0),), t, dtype=torch.int64, device=device)
-        noise_pred = model(denoised_images, t).sample
-        classifier_grad = classifier_gradient(denoised_images, t_tensor, y, classifier, scale=classifier_scale)
+def plot_batch_results_4(originals, noisies, denoised_batch, indices, output_dir, path_prev):
+    """Plot and save the results for each image in the batch."""
+    for i, (original, noisy, denoised, idx) in enumerate(zip(originals, noisies, denoised_batch, indices)):
+        fig, axs = plt.subplots(1, 4, figsize=(28, 7))
         
-        # Adjust noise prediction based on classifier gradient
-        alpha_bar_sqrt = torch.sqrt(1 - model.noise_scheduler.alphas_cumprod[t])
-        noise_pred = noise_pred - alpha_bar_sqrt * classifier_grad
-
-        with torch.no_grad():
-            denoised_images = [
-                model.noise_scheduler.step(noise_pred[i], t_tensor[i], denoised_images[i]).prev_sample
-                for i in range(len(denoised_images))
-            ]
-            denoised_images = torch.stack(denoised_images)
-
-        torch.cuda.empty_cache()
-
-    return denoised_images
-
-def sampling(model, images, t):
-    t_tensor = torch.full((images.size(0),), t, dtype=torch.int64, device=device)
-    noise_pred = model(images, t_tensor).sample
-    denoised_batch = [
-        model.noise_scheduler.step(noise_pred[i], t_tensor[i], images[i]).pred_original_sample
-        for i in range(len(images))
-    ]
-    return torch.stack(denoised_batch)
-
+        # Process denoised image
+        denoised = (denoised + 1) / 2.0
+        denoised_np = denoised.squeeze(0).detach().cpu().numpy()
+        
+        # Transform the denoised image for the fourth column
+        transformed = np.clip(denoised_np, 0, 1)  # Clip to [0, 1]
+        transformed = transformed * 1.2 - 0.2     # Scale to [-0.2, 1]
+        
+        # Prepare images and titles
+        images = [
+            original.transpose(1, 2, 0), 
+            noisy.squeeze(0).detach().cpu().numpy(), 
+            denoised_np,
+            transformed
+        ]
+        titles = ["Original Image", "Noisy Image", "Denoised Image", "Clip&Scale Denoised Image"]
+        
+        # Plot each image in a column
+        for ax, img, title in zip(axs, images, titles):
+            im = ax.imshow(img, cmap="gray")
+            ax.set_title(title)
+            fig.colorbar(im, ax=ax)
+        
+        # Save the figure
+        fig.suptitle(f"Diffusion Sampling (scd_idx={idx})", fontsize=16)
+        output_path = os.path.join(output_dir, f"{path_prev}_scd_id={idx}.png")
+        plt.savefig(output_path, bbox_inches="tight")
+        plt.close()
 
 def plot_batch_results(originals, noisies, denoised_batch, indices, output_dir, path_prev):
     """Plot and save the results for each image in the batch."""
@@ -98,6 +85,71 @@ def plot_batch_results(originals, noisies, denoised_batch, indices, output_dir, 
         plt.savefig(output_path, bbox_inches="tight")
         plt.close()
 
+def one_step_sampling(model, images, t):
+    t_tensor = torch.full((images.size(0),), t, dtype=torch.int64, device=device)
+    noise_pred = model(images, t_tensor).sample
+    denoised_batch = [
+        model.noise_scheduler.step(noise_pred[i], t_tensor[i], images[i]).pred_original_sample
+        for i in range(len(images))
+    ]
+    return torch.stack(denoised_batch)
+
+def classifier_gradient(x, t, y, classifier, scale):
+    """Compute the classifier gradient."""
+    x.requires_grad_(True)
+    logits = classifier(x, t)
+    log_probs = F.log_softmax(logits, dim=-1)
+    print("log_probs: ", log_probs.tolist()[0])
+    selected = log_probs[range(len(logits)), y.view(-1)]
+    grad = torch.autograd.grad(selected.sum(), x)[0]
+    return grad * scale
+
+
+def sampling(model, images, timestep, original_images, batch_indices, output_dir, classifier=None, classifier_scale=1.0, target_class=1):
+    """
+    Perform diffusion sampling with or without classifier guidance.
+    
+    Args:
+        model: The diffusion model used for denoising.
+        classifier: The classifier for guidance (can be None).
+        images: The initial noisy images.
+        timestep: The starting timestep for sampling.
+        classifier_scale: Scale for classifier guidance strength.
+        target_class: The target class for guidance.
+    
+    Returns:
+        Denoised images after the sampling process.
+    """
+    denoised_images = images
+    y = torch.full((images.size(0),), target_class, dtype=torch.long, device=images.device)
+
+    for t in tqdm(range(timestep, -1, -1), desc="Sampling"):
+        t_tensor = torch.full((denoised_images.size(0),), t, dtype=torch.int64, device=images.device)
+        noise_pred = model(denoised_images, t).sample
+
+        if classifier is not None:
+            # Compute classifier gradient and adjust noise prediction
+            classifier_grad = classifier_gradient(denoised_images, t_tensor, y, classifier, classifier_scale)
+            alpha_bar_sqrt = torch.sqrt(1 - model.noise_scheduler.alphas_cumprod[t])
+            noise_pred = noise_pred - alpha_bar_sqrt * classifier_grad
+
+        # Perform denoising step
+        with torch.no_grad():
+            denoised_images = [
+                model.noise_scheduler.step(noise_pred[i], t_tensor[i], denoised_images[i]).prev_sample
+                for i in range(len(denoised_images))
+            ]
+            denoised_images = torch.stack(denoised_images)
+
+        # # Clear unused memory
+        # with torch.no_grad():
+        #     if (t + 1) % 10 == 0:
+        #         plot_batch_results(original_images.cpu().numpy(), images, denoised_images, batch_indices, output_dir, f"t={t+1}")
+        torch.cuda.empty_cache()
+    # one_step_sampling(model, denoised_images, 140)
+
+    return denoised_images
+
 def preprocess_labels(images):
     # replace gray pixels into white
     non_black_mask = images > 0
@@ -107,31 +159,37 @@ def preprocess_labels(images):
 # Main Execution
 if __name__ == "__main__":
     # settings
-    num_sampling = 5
-    timestep = 750
+    num_sampling = 1
+    timestep = 600
     use_classifier_guidance = True
-    # use_black = False
+    num_inference_steps = 1000
+    use_one_step_sampling = False
+    # use_black = True
     # use_white = False
     print("use_classifier_guidance: ", use_classifier_guidance)
+    noise_scheduler = get_named_beta_schedule('cosine', num_inference_steps)
 
 
     # Load models
     diffusion_model = load_model(
         # '/mydata/dlbirhoui/chia/checkpoints/ddim_small_mix/epoch=130-val_loss=0.0160.ckpt',
         # '/mydata/dlbirhoui/chia/checkpoints/ddim_small_more_layer_mix/epoch=219-val_loss=0.0162.ckpt',
-        'mydata/dlbirhoui/chia/checkpoints/ddim_small_mean0_mix_one_more_layer/epoch=249-val_loss=0.0175.ckpt',
+        # '/mydata/dlbirhoui/chia/checkpoints/ddim_small_mean0_mix_one_more_layer/epoch=249-val_loss=0.0175.ckpt',
+        # '/mydata/dlbirhoui/chia/checkpoints/ddim_small_mean0_deep_cosine/epoch=246-val_loss=0.0057.ckpt',
+        "/mydata/dlbirhoui/chia/checkpoints/ddim_small_mean0_mix_deep_cosine/epoch=244-val_loss=0.0057.ckpt",        
         DiffusionModel,
         config=TrainingConfig(),
-        noise_scheduler=DDIMScheduler(num_train_timesteps=1000, beta_start=1e-5, beta_end=5e-3, beta_schedule='scaled_linear')
+        noise_scheduler=noise_scheduler
     )
     if use_classifier_guidance:
-        classifier = load_model('../checkpoints/classifier/unet_classifier/last.ckpt', UnetClassifier)
+        # classifier = load_model('../checkpoints/classifier/resnet_classifier/last.ckpt', ResNetClassifier)
+        classifier = load_model('/mydata/dlbirhoui/chia/checkpoints/classifier/unet_classifier_cosine/epoch=172-val_loss=0.0759.ckpt', UnetClassifier)
 
     # Define batch of images to sample
     data_path = '/mydata/dlbirhoui/firat/OADAT'
     scd_fname_h5 = 'SCD_RawBP.h5'
     scd_key = 'vc_BP'
-    batch_indices = np.random.randint(0, 20000, size=num_sampling)  # Adjust batch size as needed
+    batch_indices = np.random.randint(0, 20000, size=num_sampling)  # Adjust batch size as needed # [17686, 13425, 2389, 8366, 19222] 
     print(f"Sampling from {scd_fname_h5}, key={scd_key}, indices={batch_indices}")
 
     # Load batch of images
@@ -145,7 +203,6 @@ if __name__ == "__main__":
     #     scd_image_batch = torch.ones((1, 1, 256, 256), device=device, dtype=torch.float32)
 
     # Initialize noise
-    num_inference_steps = 1000
     torch.manual_seed(666)
     print('check random seed: ', np.random.randint(1))
     noise = torch.randn(scd_image_batch.shape, device=device)
@@ -161,11 +218,16 @@ if __name__ == "__main__":
     if use_classifier_guidance:
         # Sampling with classifier guidance for the batch
         print("Running the classifier-guided sampling loop...")
-        classifier_scale = 80.0
-        denoised_images = classifier_guided_sampling(diffusion_model, classifier, noisy_images, timestep, classifier_scale=75.0)
-        plot_batch_results(scd_image_batch.cpu().numpy(), noisy_images, denoised_images, batch_indices, output_dir, f"mean0_layer_mix_unet_classifier_t={timestep}_s={classifier_scale}")
+        classifier_scale = 60
+        denoised_images = sampling(diffusion_model, noisy_images, timestep, scd_image_batch, batch_indices, output_dir, classifier, classifier_scale)
+        plot_batch_results(scd_image_batch.cpu().numpy(), noisy_images, denoised_images, batch_indices, output_dir, f"mean0_deep_cosine_mix_unet_classifier_t={timestep}_s={classifier_scale}")
+        plot_batch_results_4(scd_image_batch.cpu().numpy(), noisy_images, denoised_images, batch_indices, output_dir, f"mean0_deep_cosine_mix_unet_classifier_t={timestep}_s={classifier_scale}")
+    elif use_one_step_sampling:
+        print("Running the one_step sampling...")
+        denoised_images = one_step_sampling(diffusion_model, noisy_images, timestep)    
+        plot_batch_results(scd_image_batch.cpu().numpy(), noisy_images, denoised_images, batch_indices, output_dir, f"mean0_deep_one_step_t={timestep}")
 
     else:
         print("Running the sampling loop...")
         denoised_images = sampling(diffusion_model, noisy_images, timestep)    
-        plot_batch_results(scd_image_batch.cpu().numpy(), noisy_images, denoised_images, batch_indices, output_dir, f"t={timestep}")
+        plot_batch_results(scd_image_batch.cpu().numpy(), noisy_images, denoised_images, batch_indices, output_dir, f"mean0_deep_t={timestep}")

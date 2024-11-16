@@ -1,1 +1,3 @@
-python train_classifier.py --oadat_dir /mydata/dlbirhoui/firat/OADAT --num_epochs 200 --gpus 1 --batch_size 128 --num_workers 4 --job_name unet_classifier --balance_class False
+# python train_classifier.py --oadat_dir /mydata/dlbirhoui/firat/OADAT --num_epochs 200 --gpus 1 --batch_size 128 --num_workers 4 --job_name unet_classifier --noise_schedule cosine --classifier unet
+# python train_classifier.py --oadat_dir /mydata/dlbirhoui/firat/OADAT --num_epochs 200 --gpus 1 --batch_size 128 --num_workers 4 --job_name unet_classifier_cosine --noise_schedule cosine --classifier unet
+python train_classifier.py --oadat_dir /mydata/dlbirhoui/firat/OADAT --num_epochs 200 --gpus 1 --batch_size 8 --num_workers 4 --job_name attention_unet_classifier_cosine --noise_schedule cosine --classifier unet_attention
