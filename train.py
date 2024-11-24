@@ -84,7 +84,7 @@ def main() -> None:
         callbacks=[checkpoint_callback, ModelSummary(max_depth=2)], # depth=-1 for full summary
         log_every_n_steps=50,
         check_val_every_n_epoch=1,
-        num_sanity_val_steps=0,
+        num_sanity_val_steps=1,
     )
 
     # Load the latest checkpoint if available

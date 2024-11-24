@@ -88,6 +88,7 @@ class OADATDataModule(LightningDataModule):
                 )
 
             else:
+                print("only trained on swfd")
                 split_idx = int(len(indices_swfd) * 0.8)
                 self.train_indices, self.val_indices = (
                     indices_swfd[:split_idx],
@@ -108,7 +109,7 @@ class OADATDataModule(LightningDataModule):
                 "SWFD_semicircle_RawBP.h5", "sc_BP", self.test_indices
             )
 
-        self.scd_obj = self.load_dataset("SCD_RawBP.h5", "vc_BP", [0, 1000, 2000, 3000, 4000])
+        self.scd_obj = self.load_dataset("SCD_RawBP.h5", "vc_BP", [0, 1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000, 9000])
 
     def train_dataloader(self) -> DataLoader:
         return DataLoader(

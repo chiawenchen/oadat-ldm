@@ -4,7 +4,7 @@ import torch.nn.functional as F
 import numpy as np
 from matplotlib import pyplot as plt
 from tqdm import tqdm
-from config import TrainingConfig, ClassifierConfig
+from config import TrainingConfig
 from diffusers import DDIMScheduler
 from utils import transforms, get_last_checkpoint, get_named_beta_schedule
 from model_one_more_layer import DiffusionModel
@@ -127,8 +127,8 @@ def preprocess_labels(images):
 # Main Execution
 if __name__ == "__main__":
     # settings
-    num_sampling = 5
-    timestep = 999
+    num_sampling = 3
+    timestep = 300
     use_classifier_guidance = True
     num_inference_steps = 1000
     use_one_step_sampling = False
@@ -150,22 +150,17 @@ if __name__ == "__main__":
         config=TrainingConfig(),
         noise_scheduler=noise_scheduler
     )
-
-    # config = ClassifierConfig()
-    # config.use_scale_shift_norm = False
-
     if use_classifier_guidance:
         # classifier = load_model('../checkpoints/classifier/resnet_classifier/last.ckpt', ResNetClassifier)
         # classifier = load_model('/mydata/dlbirhoui/chia/checkpoints/classifier/unet_classifier_cosine/epoch=172-val_loss=0.0759.ckpt', UnetClassifier)
         # classifier = load_model('/mydata/dlbirhoui/chia/checkpoints/classifier/attention_unet_classifier_cosine/epoch=58-val_loss=0.0738.ckpt', UnetAttentionClassifier)
         classifier = load_model('/mydata/dlbirhoui/chia/checkpoints/classifier/attention_unet_classifier_cosine/epoch=124-val_loss=0.0703.ckpt', UnetAttentionClassifier)
-        # classifier = load_model('/mydata/dlbirhoui/chia/checkpoints/classifier/attention_unet_classifier_cosine_wo_scale_shift/epoch=82-val_loss=0.0743.ckpt', UnetAttentionClassifier)
     
     # Define batch of images to sample
     data_path = '/mydata/dlbirhoui/firat/OADAT'
     scd_fname_h5 = 'SCD_RawBP.h5'
     scd_key = 'vc_BP'
-    batch_indices = np.random.randint(0, 20000, size=num_sampling)  # Adjust batch size as needed
+    batch_indices = np.random.randint(0, 20000, size=num_sampling)  # Adjust batch size as needed # [17686, 13425, 2389, 8366, 19222] 
     print(f"Sampling from {scd_fname_h5}, key={scd_key}, indices={batch_indices}")
 
     # Load batch of images
@@ -179,6 +174,8 @@ if __name__ == "__main__":
         scd_image_batch = torch.ones((1, 1, 256, 256), device=device, dtype=torch.float32)
 
     # Initialize noise
+    torch.manual_seed(666)
+    print('check random seed: ', np.random.randint(1))
     noise = torch.randn(scd_image_batch.shape, device=device)
     noise_scheduler = diffusion_model.noise_scheduler
     noise_scheduler.set_timesteps(num_inference_steps=num_inference_steps)

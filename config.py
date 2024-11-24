@@ -13,7 +13,7 @@ class TrainingConfig:
     gradient_accumulation_steps: int = 1
     learning_rate: float = 1e-4
     lr_warmup_epochs: int = 5
-    save_image_epochs: int = 10
+    save_image_epochs: int = 5
     mixed_precision: str = (
         "fp16"  # `no` for float32, `fp16` for automatic mixed precision
     )
@@ -22,7 +22,7 @@ class TrainingConfig:
     num_train_timesteps: int = 1000
     sample_dir: str = None
     sample_num: int = 11
-    fixed_image_paths: dict[str, str] = None
+    # fixed_image_paths: dict[str, str] = None
 
 @dataclass
 class ClassifierConfig:
@@ -61,9 +61,8 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("--job_name", default="ddim-test", type=str, help="Job name")
     parser.add_argument(
         "--mix_swfd_scd",
-        type=bool,
-        default=False,
-        help="Mix SWFD and SCD datasets (True or False)",
+        action="store_true",
+        help="Mix SWFD and SCD datasets (set to True if specified, False otherwise)",
     )
     parser.add_argument(
         "--noise_schedule", default="linear", type=str,

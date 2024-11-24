@@ -28,6 +28,25 @@ def get_named_beta_schedule(schedule_name, num_diffusion_timesteps):
             beta_schedule="linear",
         )
     return noise_scheduler
+    
+SWFD_MEAN = 0.001611371641047299
+SWFD_STD = 0.04431603103876114
+SCD_MEAN = 0.0015873634681094503
+SCD_STD = 0.04384154212224777
+
+swfd_transforms = v2.Compose(
+            [
+                v2.Lambda(lambda x: np.clip(x / np.max(x), a_min=-0.2, a_max=None)),
+                v2.Normalize(SWFD_MEAN, SWFD_STD)
+            ]
+        )
+
+scd_transforms = v2.Compose(
+            [
+                v2.Lambda(lambda x: np.clip(x / np.max(x), a_min=-0.2, a_max=None)),
+                v2.Normalize(SCD_MEAN, SCD_STD)
+            ]
+        )
 
 transforms = v2.Compose(
             [

@@ -4,7 +4,7 @@ import torch.nn.functional as F
 import numpy as np
 from matplotlib import pyplot as plt
 from tqdm import tqdm
-from config import TrainingConfig, ClassifierConfig
+from config import TrainingConfig
 from diffusers import DDIMScheduler
 from utils import transforms, get_last_checkpoint, get_named_beta_schedule
 from model_one_more_layer import DiffusionModel
@@ -34,7 +34,48 @@ def prepare_images(data_path, fname, key, indices):
     images = [torch.tensor(img, device=device, dtype=torch.float32).unsqueeze(0) for img in dataset_obj]
     return torch.cat(images, dim=0)
 
-def plot_batch_results(originals, noisies, denoised_batch, indices, output_dir, path_prev):
+import os
+import matplotlib.pyplot as plt
+
+def plot_batch_results(images, indices, output_dir, path_prev, category):
+    """Plot and save the results for each image in the batch."""
+    # Create a 4x4 grid for the 16 images
+    fig, axs = plt.subplots(4, 4, figsize=(28, 28))
+
+    # Preprocess images based on category
+    if category == 'denoised':
+        images = (images + 1) / 2.0
+        images = images.squeeze(0).detach().cpu().numpy()
+    elif category == 'original':
+        images = images.permute(0, 2, 3, 1).detach().cpu().numpy()  # Transpose to HWC
+    elif category == 'noisy':
+        images = images.squeeze(0).detach().cpu().numpy()
+    else:
+        raise ValueError(f"Unknown category: {category}")
+
+    # Ensure images are compatible with the plotting
+    images = images[:16]  # Limit to 16 images for a 4x4 grid
+    indices = indices[:16]  # Match the indices to the images
+
+    # Flatten axes for easy iteration
+    axs = axs.flatten()
+
+    for ax, img, idx in zip(axs, images, indices):
+        im = ax.imshow(img, cmap="gray")
+        ax.set_title(f"scd_idx={idx}")
+        fig.colorbar(im, ax=ax)
+        ax.axis("off")  # Turn off axis ticks and labels
+
+    # Set the main title for the entire figure
+    fig.suptitle(f"{category}", fontsize=24)
+
+    # Save the figure
+    output_path = os.path.join(output_dir, f"{path_prev}.png")
+    plt.savefig(output_path, bbox_inches="tight")
+    plt.close()
+
+
+def plot_results(originals, noisies, denoised_batch, indices, output_dir, path_prev):
     """Plot and save the results for each image in the batch."""
     for i, (original, noisy, denoised, idx) in enumerate(zip(originals, noisies, denoised_batch, indices)):
         fig, axs = plt.subplots(1, 3, figsize=(21, 7))
@@ -110,7 +151,7 @@ def sampling(model, images, timestep, original_images, batch_indices, output_dir
 
         # with torch.no_grad():
         #     if (t + 1) % 50 == 0 or t == 0:
-        #         plot_batch_results(original_images.cpu().numpy(), images, denoised_images, batch_indices, output_dir, f"t={t+1}")
+        #         plot_results(original_images.cpu().numpy(), images, denoised_images, batch_indices, output_dir, f"t={t+1}")
         
         # Clear unused memory
         torch.cuda.empty_cache()
@@ -127,9 +168,9 @@ def preprocess_labels(images):
 # Main Execution
 if __name__ == "__main__":
     # settings
-    num_sampling = 5
+    num_sampling = 16
     timestep = 999
-    use_classifier_guidance = True
+    use_classifier_guidance = False
     num_inference_steps = 1000
     use_one_step_sampling = False
     use_black = False
@@ -143,29 +184,24 @@ if __name__ == "__main__":
         # '/mydata/dlbirhoui/chia/checkpoints/ddim_small_mix/epoch=130-val_loss=0.0160.ckpt',
         # '/mydata/dlbirhoui/chia/checkpoints/ddim_small_more_layer_mix/epoch=219-val_loss=0.0162.ckpt',
         # '/mydata/dlbirhoui/chia/checkpoints/ddim_small_mean0_mix_one_more_layer/epoch=249-val_loss=0.0175.ckpt',
-        # '/mydata/dlbirhoui/chia/checkpoints/ddim_small_mean0_deep_cosine/epoch=246-val_loss=0.0057.ckpt',
+        '/mydata/dlbirhoui/chia/checkpoints/ddim_small_mean0_deep_cosine/epoch=246-val_loss=0.0057.ckpt',
         # "/mydata/dlbirhoui/chia/checkpoints/ddim_small_mean0_mix_deep_cosine/epoch=244-val_loss=0.0057.ckpt",    
-        "/mydata/dlbirhoui/chia/checkpoints/ddim_small_mean0_mix_deep_cosine_variety/epoch=248-val_loss=0.0057.ckpt",    
+        # "/mydata/dlbirhoui/chia/checkpoints/ddim_small_mean0_mix_deep_cosine_variety/epoch=248-val_loss=0.0057.ckpt",    
         DiffusionModel,
         config=TrainingConfig(),
         noise_scheduler=noise_scheduler
     )
-
-    # config = ClassifierConfig()
-    # config.use_scale_shift_norm = False
-
     if use_classifier_guidance:
         # classifier = load_model('../checkpoints/classifier/resnet_classifier/last.ckpt', ResNetClassifier)
         # classifier = load_model('/mydata/dlbirhoui/chia/checkpoints/classifier/unet_classifier_cosine/epoch=172-val_loss=0.0759.ckpt', UnetClassifier)
         # classifier = load_model('/mydata/dlbirhoui/chia/checkpoints/classifier/attention_unet_classifier_cosine/epoch=58-val_loss=0.0738.ckpt', UnetAttentionClassifier)
         classifier = load_model('/mydata/dlbirhoui/chia/checkpoints/classifier/attention_unet_classifier_cosine/epoch=124-val_loss=0.0703.ckpt', UnetAttentionClassifier)
-        # classifier = load_model('/mydata/dlbirhoui/chia/checkpoints/classifier/attention_unet_classifier_cosine_wo_scale_shift/epoch=82-val_loss=0.0743.ckpt', UnetAttentionClassifier)
     
     # Define batch of images to sample
     data_path = '/mydata/dlbirhoui/firat/OADAT'
     scd_fname_h5 = 'SCD_RawBP.h5'
     scd_key = 'vc_BP'
-    batch_indices = np.random.randint(0, 20000, size=num_sampling)  # Adjust batch size as needed
+    batch_indices = np.random.randint(0, 20000, size=num_sampling)  # Adjust batch size as needed # [17686, 13425, 2389, 8366, 19222] 
     print(f"Sampling from {scd_fname_h5}, key={scd_key}, indices={batch_indices}")
 
     # Load batch of images
@@ -179,7 +215,10 @@ if __name__ == "__main__":
         scd_image_batch = torch.ones((1, 1, 256, 256), device=device, dtype=torch.float32)
 
     # Initialize noise
-    noise = torch.randn(scd_image_batch.shape, device=device)
+    local_rng = torch.Generator(device='cuda')
+    seed = 42
+    local_rng.manual_seed(seed)
+    noise = torch.randn(scd_image_batch.shape, device=device, generator=local_rng)
     noise_scheduler = diffusion_model.noise_scheduler
     noise_scheduler.set_timesteps(num_inference_steps=num_inference_steps)
  
@@ -192,16 +231,19 @@ if __name__ == "__main__":
     if use_classifier_guidance:
         # Sampling with classifier guidance for the batch
         print("Running the classifier-guided sampling loop...")
-        classifier_scale = 10
+        classifier_scale = 30
         denoised_images = sampling(diffusion_model, noisy_images, timestep, scd_image_batch, batch_indices, output_dir, classifier, classifier_scale)
-        plot_batch_results(scd_image_batch.cpu().numpy(), noisy_images, denoised_images, batch_indices, output_dir, f"mix_attclf_t={timestep}_s={classifier_scale}")
-
+        plot_results(scd_image_batch.cpu().numpy(), noisy_images, denoised_images, batch_indices, output_dir, f"mix_attclf_t={timestep}_s={classifier_scale}")
+ 
     elif use_one_step_sampling:
         print("Running the one_step sampling...")
         denoised_images = one_step_sampling(diffusion_model, noisy_images, timestep)    
-        plot_batch_results(scd_image_batch.cpu().numpy(), noisy_images, denoised_images, batch_indices, output_dir, f"one_step_t={timestep}")
+        plot_results(scd_image_batch.cpu().numpy(), noisy_images, denoised_images, batch_indices, output_dir, f"one_step_t={timestep}")
 
     else:
         print("Running the sampling loop...")
         denoised_images = sampling(diffusion_model, noisy_images, timestep, scd_image_batch, batch_indices, output_dir)    
-        plot_batch_results(scd_image_batch.cpu().numpy(), noisy_images, denoised_images, batch_indices, output_dir, f"t={timestep}")
+        # plot_results(scd_image_batch.cpu().numpy(), noisy_images, denoised_images, batch_indices, output_dir, f"t={timestep}")
+        plot_batch_results(denoised_images, batch_indices, output_dir, f"swfd_from_X1000_to_X0_seed={seed}_denoised", "denoised")
+        # plot_batch_results(noisy_images, batch_indices, output_dir, f"swfd_from_X1000_to_X0_seed={seed}_noisy", "noisy")
+        # plot_batch_results(scd_image_batch, batch_indices, output_dir, f"swfd_from_X1000_to_X0_seed={seed}_original", "original")
