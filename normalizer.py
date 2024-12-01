@@ -9,23 +9,25 @@ from tqdm import tqdm
 transforms = v2.Compose(
       [
           v2.Lambda(lambda x: np.clip(x / np.max(x), a_min=-0.2, a_max=None)),
+          v2.Lambda(lambda x: (x - x.min()) / (x.max() - x.min())),
       ]
   )
 
-data_path = '/mydata/dlbirhoui/firat/OADAT'
-fname = 'SWFD_semicircle_RawBP.h5'
-key = 'sc_BP'
-indices_swfd = np.load(
-    "/mydata/dlbirhoui/chia/oadat-ldm/train_sc_BP_indices.npy"
-)
-
 # data_path = '/mydata/dlbirhoui/firat/OADAT'
-# fname = 'SCD_RawBP.h5'
-# key = 'vc_BP'
+# fname = 'SWFD_semicircle_RawBP.h5'
+# key = 'sc_BP'
+# indices = np.load(
+#     "/mydata/dlbirhoui/chia/oadat-ldm/train_sc_BP_indices.npy"
+# )
+data_path = '/mydata/dlbirhoui/firat/OADAT'
+fname = 'SCD_RawBP.h5'
+key = 'vc_BP'
+indices=None
+
 
 # load dataset
 obj = dataset.Dataset(
-    fname_h5=os.path.join(data_path, fname), key=key, inds=indices_swfd, transforms=transforms
+    fname_h5=os.path.join(data_path, fname), key=key, inds=indices, transforms=transforms
 )
 
 dataloader = DataLoader(
@@ -61,6 +63,14 @@ print(f"Global Mean: {global_mean}, Global Std: {global_std}")
 # Global Min: -0.20000000298023224, Global Max: 1.0
 # Global Mean: 0.001611371641047299, Global Std: 0.04431603103876114
 
+# SWFD with scale to 0 and 1
+# Global Min: 0.0, Global Max: 1.0
+# Global Mean: 0.16804751753807068, Global Std: 0.03693051263689995
+
 # SCD
 # Global Min: -0.20000000298023224, Global Max: 1.0
 # Global Mean: 0.0029308649245649576, Global Std: 0.0893622562289238
+
+# SCD with scale to 0 and 1
+# Global Min: 0.0, Global Max: 1.0
+# Global Mean: 0.1689334511756897, Global Std: 0.07449506968259811

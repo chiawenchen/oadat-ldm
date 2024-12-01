@@ -1,0 +1,1 @@
+python train_vae.py --oadat_dir /mydata/dlbirhoui/firat/OADAT --num_epochs 250 --gpus 1 --batch_size 32 --num_workers 4 --job_name vae --mix_swfd_scd

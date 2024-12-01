@@ -17,7 +17,8 @@ from torchvision.transforms import v2
 
 from diffusers import DDIMScheduler
 from config import ClassifierConfig, parse_arguments
-from utils import get_last_checkpoint, transforms, get_named_beta_schedule
+from utils import get_last_checkpoint, get_named_beta_schedule
+from utils import swfd_transforms, scd_transforms
 import dataset
 
 from UnetAttentionClassifier import UnetAttentionClassifier
@@ -79,7 +80,6 @@ class NoisyOADATDataModule(LightningDataModule):
         self.data_path = data_path
         self.batch_size = batch_size
         self.num_workers = num_workers
-        self.transforms = transforms
         self.noise_scheduler = noise_scheduler
 
     def load_dataset(
@@ -88,11 +88,12 @@ class NoisyOADATDataModule(LightningDataModule):
         key: str,
         indices: list[int],
         label: int,
+        transforms: None
     ) -> dataset.Dataset:
         return NoisyDataset(
             fname_h5=os.path.join(self.data_path, fname_h5),
             key=key,
-            transforms=self.transforms,
+            transforms=transforms,
             inds=indices,
             noise_scheduler=self.noise_scheduler,
             label=label,
@@ -120,16 +121,16 @@ class NoisyOADATDataModule(LightningDataModule):
 
             # Load datasets
             self.train_obj_swfd = self.load_dataset(
-                "SWFD_semicircle_RawBP.h5", "sc_BP", train_indices_swfd, 1
+                "SWFD_semicircle_RawBP.h5", "sc_BP", train_indices_swfd, 1, swfd_transforms
             )
             self.train_obj_scd = self.load_dataset(
-                "SCD_RawBP.h5", "vc_BP", train_indices_scd, 0
+                "SCD_RawBP.h5", "vc_BP", train_indices_scd, 0, scd_transforms
             )
             self.val_obj_swfd = self.load_dataset(
-                "SWFD_semicircle_RawBP.h5", "sc_BP", val_indices_swfd, 1
+                "SWFD_semicircle_RawBP.h5", "sc_BP", val_indices_swfd, 1, swfd_transforms
             )
             self.val_obj_scd = self.load_dataset(
-                "SCD_RawBP.h5", "vc_BP", val_indices_scd, 0
+                "SCD_RawBP.h5", "vc_BP", val_indices_scd, 0, scd_transforms
             )
 
             # Combine SWFD and SCD datasets for both training and validation

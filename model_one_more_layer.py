@@ -13,6 +13,7 @@ import os
 import numpy as np
 import matplotlib.pyplot as plt
 import math
+from utils import SWFD_MEAN, SWFD_STD, SCD_MEAN, SCD_STD
 
 
 class DiffusionModel(LightningModule):
@@ -21,10 +22,18 @@ class DiffusionModel(LightningModule):
         self.config = config
         self.model = UNet2DModel(
             sample_size=config.image_size,
-            in_channels=1, 
+            in_channels=1,
             out_channels=1,
             layers_per_block=2,
-            block_out_channels=(32, 32, 64, 64, 64, 128, 128),  # small model one more layer
+            block_out_channels=(
+                32,
+                32,
+                64,
+                64,
+                64,
+                128,
+                128,
+            ),  # small model one more layer
             down_block_types=(
                 "DownBlock2D",
                 "DownBlock2D",
@@ -59,60 +68,51 @@ class DiffusionModel(LightningModule):
                 0, self.config.num_train_timesteps, (self.config.batch_size,)
             ),
         )
+        self.generator = None
 
     def forward(self, x: torch.Tensor, timesteps: torch.Tensor) -> torch.Tensor:
         return self.model(x, timesteps)
 
-    def  (
+    def save_clean_image(
         self,
         image: torch.Tensor,
-        local_path: str = None,
-        log_to_wandb: bool = False,
-        wandb_name: str = None,
-        use_clip: bool = False,
+        local_path: str,
+        wandb_name: str,
     ) -> None:
-        if use_clip:
-            # check if the image has NaN or Inf values
-            if torch.any(torch.isinf(image)) or torch.any(torch.isnan(image)):
-                print(f"Image contains NaN or Inf values.")
-            # check if the image is in the range [0, 1]
-            if torch.min(image) < 0 or torch.max(image) > 1:
-                print(
-                    f"Image is not in the range [0, 1]. Min: {torch.min(image)}, Max: {torch.max(image)}"
-                )
-                # clip the image to [0, 1]
-                image = torch.clamp((image + 1) / 2.0, 0, 1)
-
-        # Convert the tensor to a PIL image # TODO: clean it
-        plt.figure(figsize=(6, 6)) 
+        plt.figure(figsize=(6, 6))
         im = plt.imshow(image.squeeze(0).cpu(), cmap="gray")
         plt.colorbar(im)
-        plt.savefig(local_path, bbox_inches="tight")  # Save with specified filename
+        plt.savefig(local_path, bbox_inches="tight")
         plt.close()
-
-        # Log image to WandB if required
-        if log_to_wandb:
-            if wandb_name is None:
-                raise ValueError("wandb_name must be provided if log_to_wandb is True")
-            self.logger.experiment.log({wandb_name: [wandb.Image(local_path)]})
+        self.logger.experiment.log({wandb_name: [wandb.Image(local_path)]})
 
     def save_images(
         self,
         images: list[torch.Tensor],
         timesteps: torch.Tensor,
         local_path: str = None,
-        log_to_wandb: bool = False,
-        wandb_name: str = None,
-        use_clip: bool = False,
+        wandb_name: str = "wandb_name",
+        transform_back: bool = False,
     ) -> None:
-        if use_clip:
+        if transform_back:
             # check if the image has NaN or Inf values
             for img in images:
                 if torch.any(torch.isinf(img)) or torch.any(torch.isnan(img)):
                     print(f"Image contains NaN or Inf values.")
-            # check if the image is in the range [0, 1]
-            images = [torch.clamp((img + 1) / 2.0, min=0, max=1) for img in images]
+                    img[torch.isnan(img)] = 0
+                    img[torch.isinf(img)] = 0
 
+            images = [
+                torch.clamp((img * SWFD_STD + SWFD_MEAN), min=-0.2, max=1)
+                # torch.clamp(((img + 1.0) * 1.2 / 2.0) - 0.2, min=-0.2, max=1)
+                for img in images
+            ]
+
+            # # linear scale to (0, 1)
+            # images = [
+            #     (img - img.min()) / (img.max() - img.min())
+            #     for img in images
+            # ]
         num_images = len(images)
         num_rows = 2
         num_cols = math.ceil(num_images / num_rows)
@@ -123,7 +123,16 @@ class DiffusionModel(LightningModule):
 
         for i, img in enumerate(images):
             ax = axs[i] if num_images > 1 else axs
-            im = ax.imshow(img.squeeze(0).cpu(), cmap="gray", aspect="equal")
+            if transform_back:
+                im = ax.imshow(
+                    img.squeeze(0).cpu(),
+                    cmap="gray",
+                    aspect="equal",
+                    vmin=-0.2,
+                    vmax=1.0,
+                )
+            else:
+                im = ax.imshow(img.squeeze(0).cpu(), cmap="gray", aspect="equal")
             ax.axis("off")
             ax.set_title(f"t = {timesteps[i] + 1}")
             fig.colorbar(im, ax=ax)
@@ -133,15 +142,16 @@ class DiffusionModel(LightningModule):
 
         plt.savefig(local_path, bbox_inches="tight")
         plt.close()
-
-        # Log image to WandB if required
-        if log_to_wandb:
-            if wandb_name is None:
-                raise ValueError("wandb_name must be provided if log_to_wandb is True")
-            self.logger.experiment.log({wandb_name: [wandb.Image(local_path)]})
+        self.logger.experiment.log({wandb_name: [wandb.Image(local_path)]})
 
     # Function to generate fixed noisy images before training
-    def generate_fixed_noisy_images_for_variety_check(self, category: str, same_X0: bool = False, same_noise: bool = False, num_sampling: int = 5) -> None:
+    def generate_fixed_noisy_images_for_variety_check(
+        self,
+        category: str,
+        same_X0: bool = False,
+        same_noise: bool = False,
+        num_sampling: int = 5,
+    ) -> None:
         local_path = os.path.join(self.config.sample_dir, f"{category}_noisy.png")
         # if os.path.exists(local_path):
         #     return
@@ -158,22 +168,19 @@ class DiffusionModel(LightningModule):
         # save clean image
         self.save_images(
             clean_images,
-            torch.full((clean_images.size(0),), -1, dtype=torch.int64, device=self.device),
+            torch.full(
+                (clean_images.size(0),), -1, dtype=torch.int64, device=self.device
+            ),
             local_path=os.path.join(self.config.sample_dir, f"{category}_clean.png"),
-            log_to_wandb=True,
             wandb_name=f"{category}_clean",
         )
 
-        timesteps = torch.full((clean_images.size(0),), 999, dtype=torch.int64, device=self.device)
-
-        if same_noise:
-            torch.manual_seed(self.config.seed)
-            noise = torch.randn(clean_images[0].shape, device=self.device)
-            noises = noise.unsqueeze(0).repeat(num_sampling, 1, 1, 1)
-            torch.seed()
-        else:
-            noises = torch.randn(clean_images.shape, device=self.device)
-
+        timesteps = torch.full(
+            (clean_images.size(0),), 999, dtype=torch.int64, device=self.device
+        )
+        noises = torch.randn(
+            clean_images.shape, generator=self.generator, device=self.device
+        )
         noisy_images = self.noise_scheduler.add_noise(clean_images, noises, timesteps)
 
         for idx in range(len(noisy_images)):
@@ -190,7 +197,6 @@ class DiffusionModel(LightningModule):
             noisy_images,
             timesteps,
             local_path,
-            log_to_wandb=True,
             wandb_name=f"{category}_noisy",
         )
 
@@ -209,10 +215,9 @@ class DiffusionModel(LightningModule):
 
         clean_image = clean_images[0]
         # save clean image
-        self.save_image(
+        self.save_clean_image(
             clean_image,
             local_path=os.path.join(self.config.sample_dir, f"{category}_clean.png"),
-            log_to_wandb=True,
             wandb_name=f"{category}_clean",
         )
 
@@ -227,7 +232,9 @@ class DiffusionModel(LightningModule):
             device=self.device,
         )
 
-        noises = torch.randn(clean_image.shape, device=self.device)
+        noises = torch.randn(
+            clean_image.shape, generator=self.generator, device=self.device
+        )
 
         noisy_images = []
         for idx, t in enumerate(timesteps):
@@ -245,7 +252,6 @@ class DiffusionModel(LightningModule):
             noisy_images,
             timesteps,
             local_path,
-            log_to_wandb=True,
             wandb_name=f"{category}_noisy",
         )
 
@@ -262,9 +268,13 @@ class DiffusionModel(LightningModule):
 
     def on_train_start(self) -> None:
         print("on_train_start")
+        self.generator = torch.Generator(device=self.device)
+        self.generator.manual_seed(self.config.seed)
         self.generate_fixed_noisy_images("swfd")
         self.generate_fixed_noisy_images("scd")
-        self.generate_fixed_noisy_images_for_variety_check("diff_X0_same_noise", False, True)
+        self.generate_fixed_noisy_images_for_variety_check(
+            "prepicked_noise", False, True
+        )
 
     def training_step(self, batch: torch.Tensor, batch_idx: int) -> torch.Tensor:
         clean_images = batch
@@ -293,18 +303,18 @@ class DiffusionModel(LightningModule):
 
     def validation_step(self, batch: torch.Tensor, batch_idx: int) -> torch.Tensor:
         # fixed seed during validation to ensure the noise is always the same
-        prng = torch.Generator(device=self.device)
-        prng.manual_seed(self.config.seed)
         clean_images = batch
-        noises = torch.randn(clean_images.shape, device=self.device, generator=prng)
+        noises = torch.randn(
+            clean_images.shape, generator=self.generator, device=self.device
+        )
         bs = clean_images.shape[0]
         timesteps = torch.randint(
             0,
             self.noise_scheduler.config.num_train_timesteps,
             (bs,),
-            device=self.device,
             dtype=torch.int64,
-            generator=prng
+            generator=self.generator,
+            device=self.device,
         )
 
         noisy_images = self.noise_scheduler.add_noise(clean_images, noises, timesteps)
@@ -315,16 +325,17 @@ class DiffusionModel(LightningModule):
 
         return val_loss
 
-    def get_fixed_noisy_images(
-        self, category: str
-    ) -> torch.Tensor:
+    def get_fixed_noisy_images(self, category: str) -> torch.Tensor:
 
         path = f"{self.config.sample_dir}/{category}_fixed_noisy_images"
         filenames = sorted(os.listdir(path))
 
         # Load all noisy images and stack them into a single tensor
         noisy_images = torch.stack(
-            [torch.load(path + '/' + filename, weights_only=True).to(self.device) for filename in filenames]
+            [
+                torch.load(path + "/" + filename, weights_only=True).to(self.device)
+                for filename in filenames
+            ]
         )
 
         return noisy_images
@@ -340,14 +351,16 @@ class DiffusionModel(LightningModule):
         self.noise_scheduler.set_timesteps(
             num_inference_steps=self.noise_scheduler.config.num_train_timesteps
         )
-        # denoise the images
         denoised_images = noisy_images.clone()
 
         for t in range(timesteps.max(), -1, -1):  # From max timestep to 0
-            active_mask = (timesteps >= t)  # Select images that still need processing
+            active_mask = timesteps >= t  # Select images that still need processing
             if active_mask.any():
                 active_noisy_images = denoised_images[active_mask]
-                noise_preds = self(active_noisy_images, torch.full((len(active_noisy_images),), t, device=self.device)).sample
+                noise_preds = self(
+                    active_noisy_images,
+                    torch.full((len(active_noisy_images),), t, device=self.device),
+                ).sample
                 denoised = [
                     self.noise_scheduler.step(
                         noise_preds[i], t, active_noisy_images[i]
@@ -363,9 +376,8 @@ class DiffusionModel(LightningModule):
             denoised_images,
             timesteps,
             local_path,
-            log_to_wandb=True,
             wandb_name=f"{category} denoised",
-            use_clip=True,
+            transform_back=True,
         )
 
     def on_validation_epoch_end(self) -> None:
@@ -398,9 +410,10 @@ class DiffusionModel(LightningModule):
             )
 
             # 3. samples from different noise, same X_0
-            noisy_images = self.get_fixed_noisy_images("same_X0_diff_noise")
-            fixed_timesteps = torch.full((noisy_images.size(0),), 999, dtype=torch.int64, device=self.device)
-            self.denoise_and_save_samples(
-                "same_X0_diff_noise", noisy_images, fixed_timesteps, self.current_epoch
+            noisy_images = self.get_fixed_noisy_images("prepicked_noise")
+            fixed_timesteps = torch.full(
+                (noisy_images.size(0),), 999, dtype=torch.int64, device=self.device
             )
-
+            self.denoise_and_save_samples(
+                "prepicked_noise", noisy_images, fixed_timesteps, self.current_epoch
+            )

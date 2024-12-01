@@ -5,7 +5,7 @@ import torch
 from config import TrainingConfig, parse_arguments
 from datamodule import OADATDataModule
 from model_one_more_layer import DiffusionModel
-from utils import get_last_checkpoint, transforms, get_named_beta_schedule
+from utils import get_last_checkpoint, get_named_beta_schedule
 from lightning.pytorch import Trainer
 from lightning.pytorch.callbacks import ModelCheckpoint, ModelSummary
 from lightning.pytorch.loggers import WandbLogger
@@ -32,11 +32,12 @@ def main() -> None:
         batch_size=args.batch_size,
         num_workers=args.num_workers,
         mix_swfd_scd=args.mix_swfd_scd,
-        transforms=transforms
     )
 
     # Set up noise scheduler
-    noise_scheduler = get_named_beta_schedule(args.noise_schedule, config.num_train_timesteps)
+    noise_scheduler = get_named_beta_schedule(
+        args.noise_schedule, config.num_train_timesteps
+    )
 
     # Set up sample image saving path
     sample_dir = os.path.join(config.output_dir, "samples", args.job_name)
@@ -45,10 +46,10 @@ def main() -> None:
 
     # Paths for storing fixed noisy images
     fixed_image_paths = {
-        "val": os.path.join(config.sample_dir, "val_fixed_noisy_images"),
+        "swfd": os.path.join(config.sample_dir, "swfd_fixed_noisy_images"),
         "scd": os.path.join(config.sample_dir, "scd_fixed_noisy_images"),
     }
-    os.makedirs(fixed_image_paths["val"], exist_ok=True)
+    os.makedirs(fixed_image_paths["swfd"], exist_ok=True)
     os.makedirs(fixed_image_paths["scd"], exist_ok=True)
     config.fixed_image_paths = fixed_image_paths
 
@@ -82,7 +83,10 @@ def main() -> None:
         accelerator="auto",
         devices=args.gpus,
         logger=logger,
-        callbacks=[checkpoint_callback, ModelSummary(max_depth=2)], # depth=-1 for full summary
+        callbacks=[
+            checkpoint_callback,
+            ModelSummary(max_depth=2),
+        ],  # depth=-1 for full summary
         log_every_n_steps=50,
         check_val_every_n_epoch=1,
         num_sanity_val_steps=0,
@@ -99,8 +103,6 @@ def main() -> None:
     trainer.fit(model, datamodule, ckpt_path=latest_ckpt)
 
     # print("best model path: ", checkpoint_callback.best_model_path, "best model score: ", checkpoint_callback.best_model_score)
-    # trainer.test(datamodule=data_module, ckpt_path=checkpoint_callback.best_model_path)
-
 
 if __name__ == "__main__":
     main()
