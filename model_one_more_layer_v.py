@@ -291,23 +291,17 @@ class DiffusionModel(LightningModule):
 
         # By sampling random timesteps for each image, the model gradually learns to predict the noise at all stages of the diffusion process (from slightly noisy images to very noisy ones)
         noisy_images = self.noise_scheduler.add_noise(clean_images, noises, timesteps)
-        noise_preds = self(noisy_images, timesteps).sample
-        # loss = self.loss_fn(noise_preds, noises)
+        # Predict v instead of noise
+        predicted_v = self(noisy_images, timesteps).sample
 
-        # Compute the base loss
-        base_loss = self.loss_fn(noise_preds, noises)
+        # Convert ground truth noise (noises) to v
+        alpha_t = self.noise_scheduler.alphas_cumprod[timesteps].sqrt().view(-1, 1, 1, 1)
+        sigma_t = (1 - self.noise_scheduler.alphas_cumprod[timesteps]).sqrt().view(-1, 1, 1, 1)
+        ground_truth_v = alpha_t * noises - sigma_t * clean_images
 
-        # Define a weight function for timesteps
-        def timestep_weight(t):
-            # Assign higher weight for t > 950, and weight = 1 otherwise
-            return torch.where(t > 950, 1.5, 1.0)  # Example: 1.5x weight for high timesteps
+        # Compute loss
+        loss = self.loss_fn(predicted_v, ground_truth_v)
 
-        # Apply weights based on timesteps
-        weights = timestep_weight(timesteps).to(base_loss.device)
-        weighted_loss = base_loss * weights
-
-        # Average the weighted loss over the batch
-        loss = weighted_loss.mean()
 
         self.log("train_loss", loss, on_step=False, on_epoch=True, prog_bar=True)
 
@@ -333,22 +327,17 @@ class DiffusionModel(LightningModule):
         )
 
         noisy_images = self.noise_scheduler.add_noise(clean_images, noises, timesteps)
-        noise_preds = self(noisy_images, timesteps).sample
-        # val_loss = self.loss_fn(noise_preds, noises)
-        # Compute the base loss
-        base_loss = self.loss_fn(noise_preds, noises)
+        # Predict v instead of noise
+        predicted_v = self(noisy_images, timesteps).sample
 
-        # Define a weight function for timesteps
-        def timestep_weight(t):
-            # Assign higher weight for t > 950, and weight = 1 otherwise
-            return torch.where(t > 950, 1.5, 1.0)  # Example: 1.5x weight for high timesteps
+        # Convert ground truth noise (noises) to v
+        alpha_t = self.noise_scheduler.alphas_cumprod[timesteps].sqrt().view(-1, 1, 1, 1)
+        sigma_t = (1 - self.noise_scheduler.alphas_cumprod[timesteps]).sqrt().view(-1, 1, 1, 1)
+        ground_truth_v = alpha_t * noises - sigma_t * clean_images
 
-        # Apply weights based on timesteps
-        weights = timestep_weight(timesteps).to(base_loss.device)
-        weighted_loss = base_loss * weights
+        # Compute loss
+        val_loss = self.loss_fn(predicted_v, ground_truth_v)
 
-        # Average the weighted loss over the batch
-        val_loss = weighted_loss.mean()
         self.log("val_loss", val_loss, on_step=False, on_epoch=True, prog_bar=True)
 
         return val_loss
@@ -385,18 +374,25 @@ class DiffusionModel(LightningModule):
             active_mask = timesteps >= t  # Select images that still need processing
             if active_mask.any():
                 active_noisy_images = denoised_images[active_mask]
-                noise_preds = self(
+                
+                # Predict v using the model
+                predicted_v = self(
                     active_noisy_images,
                     torch.full((len(active_noisy_images),), t, device=self.device),
                 ).sample
-                denoised = [
+
+                # Use the scheduler to step back
+                step_result = [
                     self.noise_scheduler.step(
-                        noise_preds[i], t, active_noisy_images[i]
+                        predicted_v[i], t, active_noisy_images[i]
                     ).prev_sample
                     for i in range(len(active_noisy_images))
                 ]
-                denoised_images[active_mask] = torch.stack(denoised)
 
+                # Update denoised images
+                denoised_images[active_mask] = torch.stack(step_result)
+
+        # Save the denoised images
         local_path = os.path.join(
             self.config.sample_dir, f"{category}_epoch_{epoch}_denoised.png"
         )

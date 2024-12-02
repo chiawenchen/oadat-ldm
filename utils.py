@@ -12,21 +12,21 @@ def get_last_checkpoint(checkpoint_dir: str) -> str:
     return latest_ckpt[-1] if latest_ckpt else None
 
 
-def get_named_beta_schedule(schedule_name, num_diffusion_timesteps):
+def get_named_beta_schedule(schedule_name, num_train_timesteps):
     if schedule_name == "cosine":
         noise_scheduler = DDIMScheduler(
-            num_train_timesteps=num_diffusion_timesteps,
+            num_train_timesteps=num_train_timesteps,
             beta_schedule="squaredcos_cap_v2",
         )
     elif schedule_name == "cosine_noclip":
         noise_scheduler = DDIMScheduler(
-            num_train_timesteps=num_diffusion_timesteps,
+            num_train_timesteps=num_train_timesteps,
             beta_schedule="squaredcos_cap_v2",
             clip_sample=False
         )
     elif schedule_name == "cosine_dark":
         noise_scheduler = DDIMScheduler(
-            num_train_timesteps=num_diffusion_timesteps,
+            num_train_timesteps=num_train_timesteps,
             beta_schedule="squaredcos_cap_v2",
             rescale_betas_zero_snr=True,
             timestep_spacing="trailing",
@@ -34,44 +34,44 @@ def get_named_beta_schedule(schedule_name, num_diffusion_timesteps):
         )
     elif schedule_name == "cosine_rescale":
         noise_scheduler = DDIMScheduler(
-            num_train_timesteps=num_diffusion_timesteps,
+            num_train_timesteps=num_train_timesteps,
             beta_schedule="squaredcos_cap_v2",
             rescale_betas_zero_snr=True,
         )
     elif schedule_name == "cosine_vpred":
         noise_scheduler = DDIMScheduler(
-            num_train_timesteps=num_diffusion_timesteps,
+            num_train_timesteps=num_train_timesteps,
             beta_schedule="squaredcos_cap_v2",
             prediction_type="v_prediction"
         )
     elif schedule_name == "cosine_rescale_trailing":
         noise_scheduler = DDIMScheduler(
-            num_train_timesteps=num_diffusion_timesteps,
+            num_train_timesteps=num_train_timesteps,
             beta_schedule="squaredcos_cap_v2",
             rescale_betas_zero_snr=True,
             timestep_spacing="trailing",
         )
     elif schedule_name == "scaled_linear":
         noise_scheduler = DDIMScheduler(
-            num_train_timesteps=num_diffusion_timesteps,
+            num_train_timesteps=num_train_timesteps,
             beta_start=1e-5,
             beta_end=5e-3,
             beta_schedule="scaled_linear",
         )
     else:
         noise_scheduler = DDIMScheduler(
-            num_train_timesteps=num_diffusion_timesteps,
+            num_train_timesteps=num_train_timesteps,
             beta_schedule="linear",
         )
     return noise_scheduler
 
-
+# after normalization, the range would be -4.5494004521 to 22.5288367428
 SWFD_MEAN = 0.001611371641047299 # 0.16804751753807068 # 
 SWFD_STD = 0.04431603103876114 # 0.03693051263689995 # 
 SCD_MEAN = 0.0015873634681094503 # 0.1689334511756897 # 
 SCD_STD = 0.04384154212224777 # 0.07449506968259811 # 
 
-swfd_transforms = v2.Compose(
+swfd_norm_transforms = v2.Compose(
     [
         v2.Lambda(lambda x: np.squeeze(x, axis=0) if x.shape[0] == 1 else x),  # Remove unnecessary channel for grayscale
         v2.Lambda(lambda x: np.clip(x / np.max(x), a_min=-0.2, a_max=None)),  # Normalize and clip
@@ -82,7 +82,7 @@ swfd_transforms = v2.Compose(
     ]
 )
 
-scd_transforms = v2.Compose(
+scd_norm_transforms = v2.Compose(
     [
         v2.Lambda(lambda x: np.squeeze(x, axis=0) if x.shape[0] == 1 else x),  # Remove unnecessary channel for grayscale
         v2.Lambda(lambda x: np.clip(x / np.max(x), a_min=-0.2, a_max=None)),  # Normalize and clip
@@ -93,19 +93,19 @@ scd_transforms = v2.Compose(
     ]
 )
 
-# swfd_transforms = v2.Compose(
-#     [
-#         v2.Lambda(lambda x: np.clip(x / np.max(x), a_min=-0.2, a_max=None)),
-#         v2.Lambda(lambda x: ((x - (-0.2)) * 2 / 1.2) - 1),
-#     ]
-# )
+swfd_transforms = v2.Compose(
+    [
+        v2.Lambda(lambda x: np.clip(x / np.max(x), a_min=-0.2, a_max=None)),
+        v2.Lambda(lambda x: ((x - (-0.2)) * 2 / 1.2) - 1),
+    ]
+)
 
-# scd_transforms = v2.Compose(
-#     [
-#         v2.Lambda(lambda x: np.clip(x / np.max(x), a_min=-0.2, a_max=None)),
-#         v2.Lambda(lambda x: ((x - (-0.2)) * 2 / 1.2) - 1),
-#     ]
-# )
+scd_transforms = v2.Compose(
+    [
+        v2.Lambda(lambda x: np.clip(x / np.max(x), a_min=-0.2, a_max=None)),
+        v2.Lambda(lambda x: ((x - (-0.2)) * 2 / 1.2) - 1),
+    ]
+)
 
 transforms = v2.Compose(
     [

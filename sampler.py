@@ -51,17 +51,13 @@ def plot_batch_results(images, indices, output_dir, path_prev, category):
     fig, axs = plt.subplots(4, 4, figsize=(28, 28))
 
     # Preprocess images based on category
-    if category == "denoised":
+    if category != "noisy":
         images = [
-            # torch.clamp((img - img.min()) / (img.max() - img.min()), min=0, max=1)
-            (((img + 1.0) * 1.2 / 2.0) - 0.2)
-            .squeeze(0)
-            .detach()
-            .cpu()
-            .numpy()
+            torch.clamp((((img + 1.0) * 1.2 / 2.0) - 0.2), min=-0.2, max=1.0)
             for img in images
         ]
 
+    images = [img.squeeze(0).detach().cpu().numpy() for img in images]
     images = images[:16]
     indices = indices[:16]
 
@@ -203,11 +199,12 @@ def preprocess_labels(images):
 if __name__ == "__main__":
     # settings
     num_sampling = 16
-    forward_timestep = 995
-    backward_timestep = 995
+    forward_timestep = 999
+    backward_timestep = 999
     use_classifier_guidance = False
     num_inference_steps = 1000
-    noise_scheduler = get_named_beta_schedule("cosine", num_inference_steps)
+    num_train_steps = 1000
+    noise_scheduler = get_named_beta_schedule("cosine_vpred", num_train_steps)
 
     print("use_classifier_guidance: ", use_classifier_guidance)
 
@@ -218,10 +215,11 @@ if __name__ == "__main__":
         # "/mydata/dlbirhoui/chia/checkpoints/dm/epoch=210-val_loss=0.0100.ckpt",
         # "/mydata/dlbirhoui/chia/checkpoints/dm_mix/epoch=223-val_loss=0.0075.ckpt",
         # "/mydata/dlbirhoui/chia/checkpoints/dm_shift_atten/epoch=210-val_loss=0.0179.ckpt",
-        "/mydata/dlbirhoui/chia/checkpoints/dm_shift/epoch=210-val_loss=0.0179.ckpt",
+        # "/mydata/dlbirhoui/chia/checkpoints/dm_shift/epoch=210-val_loss=0.0179.ckpt",
         # "/mydata/dlbirhoui/chia/checkpoints/dm_shift_10warmup/epoch=210-val_loss=0.0179.ckpt",
         # "/mydata/dlbirhoui/chia/checkpoints/dm_shift_dark/last.ckpt",
         # "/mydata/dlbirhoui/chia/checkpoints/dm_shift_dark_rescale/epoch=23-val_loss=0.0198.ckpt",
+        "/mydata/dlbirhoui/chia/checkpoints/dm_shift_vpred_new/last.ckpt",
         DiffusionModel,
         config=TrainingConfig(num_epochs=0, batch_size=1),
         noise_scheduler=noise_scheduler,
@@ -245,8 +243,8 @@ if __name__ == "__main__":
 
     # Define batch of images to sample
     data_path = "/mydata/dlbirhoui/firat/OADAT"
-    scd_fname_h5 = "SCD_RawBP.h5"  # "SWFD_semicircle_RawBP.h5"
-    scd_key = "vc_BP"  # "sc_BP"
+    scd_fname_h5 = "SWFD_semicircle_RawBP.h5"# "SCD_RawBP.h5"  # 
+    scd_key = "sc_BP" # "vc_BP"  # 
     batch_indices = np.random.randint(0, 20000, size=num_sampling)
     print(f"Sampling from {scd_fname_h5}, key={scd_key}, indices={batch_indices}")
 
@@ -312,6 +310,13 @@ if __name__ == "__main__":
             denoised_images,
             batch_indices,
             output_dir,
-            f"swfd_shift_f={forward_timestep}_b={backward_timestep}_seed={seed}_denoised",
+            f"swfd_shift_vpred_f={forward_timestep}_b={backward_timestep}_seed={seed}_denoised",
             "denoised", # "noisy", "original"
         )
+        # plot_batch_results(
+        #     scd_image_batch,
+        #     batch_indices,
+        #     output_dir,
+        #     f"swfd_shift_f={forward_timestep}_b={backward_timestep}_seed={seed}_clean",
+        #     "original",
+        # )

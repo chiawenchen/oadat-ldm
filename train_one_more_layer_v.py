@@ -2,9 +2,9 @@
 
 import os
 import torch
-from config import TrainingConfigWarmUp, parse_arguments
+from config import TrainingConfig, parse_arguments
 from datamodule import OADATDataModule
-from model_one_more_layer import DiffusionModel
+from model_one_more_layer_v import DiffusionModel
 from utils import get_last_checkpoint, get_named_beta_schedule
 from lightning.pytorch import Trainer
 from lightning.pytorch.callbacks import ModelCheckpoint, ModelSummary
@@ -21,7 +21,7 @@ def main() -> None:
     args = parse_arguments()
 
     # Set up training configuration
-    config = TrainingConfigWarmUp(
+    config = TrainingConfig(
         num_epochs=args.num_epochs,
         batch_size=args.batch_size,
     )
@@ -89,7 +89,7 @@ def main() -> None:
         ],  # depth=-1 for full summary
         log_every_n_steps=50,
         check_val_every_n_epoch=1,
-        num_sanity_val_steps=0,
+        num_sanity_val_steps=1,
     )
 
     # Load the latest checkpoint if available
