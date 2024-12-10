@@ -64,7 +64,7 @@ def plot_batch_results(images, indices, output_dir, path_prev, category):
     axs = axs.flatten()
 
     for ax, img, idx in zip(axs, images, indices):
-        im = ax.imshow(img, cmap="gray", vmin=-0.2, vmax=1)
+        im = ax.imshow(img, cmap="gray", vmin=-0.2, vmax=1.0)
         ax.set_title(f"scd_idx={idx}")
         fig.colorbar(im, ax=ax)
         ax.axis("off")
@@ -189,9 +189,9 @@ def sampling(
 
 
 def preprocess_labels(images):
-    # replace gray pixels into white
+    # replace forgraound into gray
     non_black_mask = images > 0
-    images[non_black_mask] = 1.0
+    images[non_black_mask] = 0.5
     return images
 
 
@@ -199,11 +199,14 @@ def preprocess_labels(images):
 if __name__ == "__main__":
     # settings
     num_sampling = 16
-    forward_timestep = 500
-    backward_timestep = 500
+    forward_timestep = 700
+    backward_timestep = 700
     use_classifier_guidance = False
     num_inference_steps = 1000
     num_train_steps = 1000
+    use_small_blob_scd = True
+    sample_from_pure_noise = False
+    blob_thres = 400
     noise_scheduler = get_named_beta_schedule("cosine_vpred", num_train_steps)
 
     print("use_classifier_guidance: ", use_classifier_guidance)
@@ -243,9 +246,15 @@ if __name__ == "__main__":
 
     # Define batch of images to sample
     data_path = "/mydata/dlbirhoui/firat/OADAT"
-    scd_fname_h5 = "SWFD_semicircle_RawBP.h5"# "SCD_RawBP.h5"  # 
-    scd_key = "sc_BP" # "vc_BP"  # 
-    batch_indices = np.random.randint(0, 20000, size=num_sampling)
+    scd_fname_h5 = "SCD_RawBP.h5"  # "SWFD_semicircle_RawBP.h5"# 
+    scd_key = "sc_BP" # "labels" # 
+
+    if use_small_blob_scd:
+        small_blob_indices = np.load(f"/mydata/dlbirhoui/chia/oadat-ldm/small_blob_scd_indices_{blob_thres}.npy")
+        rand_ind = np.random.randint(0, len(small_blob_indices), size=num_sampling)
+        batch_indices = small_blob_indices[rand_ind]
+    else:
+        batch_indices = np.random.randint(0, 20000, size=num_sampling)
     print(f"Sampling from {scd_fname_h5}, key={scd_key}, indices={batch_indices}")
 
     # Load batch of images
@@ -262,16 +271,20 @@ if __name__ == "__main__":
     noise = torch.randn(scd_image_batch.shape, device=device, generator=local_rng)
     noise_scheduler = diffusion_model.noise_scheduler
     noise_scheduler.set_timesteps(num_inference_steps=num_inference_steps)
-    noisy_images = noise_scheduler.add_noise(
-        scd_image_batch,
-        noise,
-        torch.full(
-            (scd_image_batch.size(0),),
-            forward_timestep,
-            dtype=torch.int64,
-            device=device,
-        ),
-    )
+    if sample_from_pure_noise:
+        noisy_images = noise
+        batch_indices = np.full(shape=num_sampling, fill_value=-1, dtype=int)
+    else:
+        noisy_images = noise_scheduler.add_noise(
+            scd_image_batch,
+            noise,
+            torch.full(
+                (scd_image_batch.size(0),),
+                forward_timestep,
+                dtype=torch.int64,
+                device=device,
+            ),
+        )
 
     output_dir = "./"
 
@@ -310,20 +323,20 @@ if __name__ == "__main__":
             denoised_images,
             batch_indices,
             output_dir,
-            f"swfd_shift_vpred_f={forward_timestep}_b={backward_timestep}_seed={seed}_denoised",
+            f"swfd_shift_vpred_f={forward_timestep}_b={backward_timestep}_seed={seed}_blob={blob_thred}_denoised",
             "denoised", # "noisy", "original"
         )
         plot_batch_results(
             scd_image_batch,
             batch_indices,
             output_dir,
-            f"swfd_shift_vpred_f={forward_timestep}_b={backward_timestep}_seed={seed}_clean",
+            f"swfd_shift_vpred_f={forward_timestep}_b={backward_timestep}_seed={seed}_blob={blob_thred}_clean",
             "original",
         )
         plot_batch_results(
             noisy_images,
             batch_indices,
             output_dir,
-            f"swfd_shift_vpred_f={forward_timestep}_b={backward_timestep}_seed={seed}_noisy",
+            f"swfd_shift_vpred_f={forward_timestep}_b={backward_timestep}_seed={seed}_blob={blob_thred}_noisy",
             "noisy",
         )

@@ -16,14 +16,11 @@ from torchvision import models
 from torchvision.transforms import v2
 
 from diffusers import DDIMScheduler
-from config import ClassifierConfig, parse_arguments
-from utils import get_last_checkpoint, get_named_beta_schedule
-from utils import swfd_transforms, scd_transforms
+from config.config import ClassifierConfig, parse_arguments
+from utils import get_last_checkpoint, get_named_beta_schedule, transforms
 import dataset
 
-from UnetAttentionClassifier import UnetAttentionClassifier
-from UnetClassifier import UnetClassifier
-from ResNetClassifier import ResNetClassifier
+from models.UnetClassifier import UnetAttentionClassifier
 
 
 class NoisyDataset(dataset.Dataset):
@@ -63,7 +60,6 @@ class NoisyDataset(dataset.Dataset):
 
         # Prepare the label and timestep for return
         label = torch.tensor(self.label, dtype=torch.long)
-        # timestep = torch.tensor(timestep, dtype=torch.int64)
 
         return noisy_x, label, timestep.item()
 
@@ -88,7 +84,6 @@ class NoisyOADATDataModule(LightningDataModule):
         key: str,
         indices: list[int],
         label: int,
-        transforms: None
     ) -> dataset.Dataset:
         return NoisyDataset(
             fname_h5=os.path.join(self.data_path, fname_h5),
@@ -103,10 +98,9 @@ class NoisyOADATDataModule(LightningDataModule):
         print("setup datamodule...")
         if stage == "fit":
             indices_swfd = np.load(
-                "/mydata/dlbirhoui/chia/oadat-ldm/train_sc_BP_indices.npy"
+                "/mydata/dlbirhoui/chia/oadat-ldm/config/train_sc_BP_indices.npy"
             )
-            indices_scd = np.arange(0, 20000)
-
+            indices_scd = np.load("/mydata/dlbirhoui/chia/oadat-ldm/config/scd_500px_blob_train_indices.npy")
             # Mix SWFD and SCD datasets (80% for training, 20% for validation)
             split_idx_swfd = int(len(indices_swfd) * 0.8)
             split_idx_scd = int(len(indices_scd) * 0.8)
@@ -115,22 +109,25 @@ class NoisyOADATDataModule(LightningDataModule):
             train_indices_swfd = indices_swfd[:split_idx_swfd]
             train_indices_scd = indices_scd[:split_idx_scd]
 
+            print("num of swfd: ", len(train_indices_swfd))
+            print("num of scd: ", len(train_indices_scd))
+
             # Val indices: 20% from both SWFD and SCD
             val_indices_swfd = indices_swfd[split_idx_swfd:]
             val_indices_scd = indices_scd[split_idx_scd:]
 
             # Load datasets
             self.train_obj_swfd = self.load_dataset(
-                "SWFD_semicircle_RawBP.h5", "sc_BP", train_indices_swfd, 1, swfd_transforms
+                "SWFD_semicircle_RawBP.h5", "sc_BP", train_indices_swfd, 1
             )
             self.train_obj_scd = self.load_dataset(
-                "SCD_RawBP.h5", "vc_BP", train_indices_scd, 0, scd_transforms
+                "SCD_RawBP.h5", "vc_BP", train_indices_scd, 0
             )
             self.val_obj_swfd = self.load_dataset(
-                "SWFD_semicircle_RawBP.h5", "sc_BP", val_indices_swfd, 1, swfd_transforms
+                "SWFD_semicircle_RawBP.h5", "sc_BP", val_indices_swfd, 1
             )
             self.val_obj_scd = self.load_dataset(
-                "SCD_RawBP.h5", "vc_BP", val_indices_scd, 0, scd_transforms
+                "SCD_RawBP.h5", "vc_BP", val_indices_scd, 0
             )
 
             # Combine SWFD and SCD datasets for both training and validation
@@ -140,12 +137,6 @@ class NoisyOADATDataModule(LightningDataModule):
             self.val_obj = torch.utils.data.ConcatDataset(
                 [self.val_obj_swfd, self.val_obj_scd]
             )
-
-            # count_0 = len(train_indices_scd)
-            # count_1 = len(train_indices_swfd)
-            # class_0_weight = (count_0 + count_1) / 2.0 * count_0
-            # class_1_weight = (count_0 + count_1) / 2.0 * count_1
-            # self.class_weights = torch.tensor([class_0_weight, class_1_weight], dtype=torch.float32)
 
     def train_dataloader(self) -> DataLoader:
         return DataLoader(
@@ -183,7 +174,7 @@ def main():
     )
 
     # Setup noise scheduler
-    noise_scheduler = get_named_beta_schedule(args.noise_schedule, config.num_timesteps)
+    noise_scheduler = get_named_beta_schedule(args.noise_schedule, config.num_train_timesteps)
 
     # DataModule
     datamodule = NoisyOADATDataModule(
@@ -198,7 +189,7 @@ def main():
         model = ResNetClassifier(num_classes=2)
     elif args.classifier == 'unet':
         model = UnetClassifier(
-            num_timesteps=config.num_timesteps,
+            num_timesteps=config.num_train_timesteps,
         )
     elif args.classifier == 'unet_attention':
         model = UnetAttentionClassifier(
@@ -227,6 +218,7 @@ def main():
         callbacks=[
             checkpoint_callback,
         ],
+        log_every_n_steps=50,
         check_val_every_n_epoch=1,
         precision=16,
     )

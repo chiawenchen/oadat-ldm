@@ -16,13 +16,13 @@ from torchvision import models
 from torchvision.transforms import v2
 
 from diffusers import DDIMScheduler
-from config import ClassifierConfig, parse_arguments
+from config.config import ClassifierConfig, parse_arguments
 from utils import get_last_checkpoint, get_named_beta_schedule
-from utils import swfd_transforms, scd_transforms
 import dataset
 from datamodule import OADATDataModule
 
-from vae import VAE
+# from models.VAE import VAE
+from models.AutoenconderKL import VAE
 
 torch.set_float32_matmul_precision("medium")
 
@@ -47,12 +47,15 @@ def main():
     )
 
     # DataModule
+    indices_scd = np.load("/mydata/dlbirhoui/chia/oadat-ldm/config/scd_500px_blob_train_indices.npy")
+    indices_swfd = np.load("/mydata/dlbirhoui/chia/oadat-ldm/config/train_sc_BP_indices.npy")
     datamodule = OADATDataModule(
         data_path=args.oadat_dir,
         batch_size=args.batch_size,
         num_workers=args.num_workers,
         mix_swfd_scd=args.mix_swfd_scd,
-        in_channel=3
+        indices_swfd=indices_swfd,
+        indices_scd=indices_scd
     )
 
     # Set up checkpoint callback

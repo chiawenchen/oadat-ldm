@@ -1,4 +1,0 @@
-# python train_one_more_layer.py --oadat_dir /mydata/dlbirhoui/firat/OADAT --num_epochs 250 --gpus 1 --batch_size 32 --num_workers 4 --job_name ddim_small_mean0_mix_one_more_layer --mix_swfd_scd
-# python train_one_more_layer.py --oadat_dir /mydata/dlbirhoui/firat/OADAT --num_epochs 250 --gpus 1 --batch_size 32 --num_workers 4 --job_name ddim_small_mean0_mix_deep_cosine_variety --mix_swfd_scd --noise_schedule cosine
-# python train_one_more_layer.py --oadat_dir /mydata/dlbirhoui/firat/OADAT --num_epochs 250 --gpus 1 --batch_size 32 --num_workers 4 --job_name ddim_small_mean0_mix_deep_cosine_lr-3 --mix_swfd_scd --noise_schedule cosine --learning_rate 0.001
-python train_one_more_layer.py --oadat_dir /mydata/dlbirhoui/firat/OADAT --num_epochs 250 --gpus 1 --batch_size 32 --num_workers 4 --job_name dm_shift_mix --mix_swfd_scd --noise_schedule cosine

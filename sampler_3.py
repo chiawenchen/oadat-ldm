@@ -51,12 +51,12 @@ def plot_batch_results(images, indices, output_dir, path_prev, category):
     fig, axs = plt.subplots(4, 4, figsize=(28, 28))
 
     # Preprocess images based on category
-    if category == "denoised":
+    if category != "noisy":
         images = [
-            # torch.clamp((img - img.min()) / (img.max() - img.min()), min=0, max=1)
-            (((img + 1.0) * 1.2 / 2.0) - 0.2)
+            torch.clamp((((img + 1.0) * 1.2 / 2.0) - 0.2), min=-0.2, max=1.0)
             for img in images
         ]
+
     images = [img.squeeze(0).detach().cpu().numpy() for img in images]
     images = images[:16]
     indices = indices[:16]
@@ -64,7 +64,7 @@ def plot_batch_results(images, indices, output_dir, path_prev, category):
     axs = axs.flatten()
 
     for ax, img, idx in zip(axs, images, indices):
-        im = ax.imshow(img, cmap="gray", vmin=-0.2, vmax=1)
+        im = ax.imshow(img, cmap="gray", vmin=-0.2, vmax=1.0)
         ax.set_title(f"scd_idx={idx}")
         fig.colorbar(im, ax=ax)
         ax.axis("off")
@@ -145,10 +145,10 @@ def sampling(
     classifier_scale=1.0,
     target_class=1,
 ):
-    """ Perform diffusion sampling with or without classifier guidance. """
+    """ Perform diffusion sampling with or without classifier guidance for v-prediction. """
     denoised_images = images
 
-    # guide towards the target class: swfd
+    # Guide towards the target class: swfd
     if classifier is not None:
         y = torch.full(
             (images.size(0),), target_class, dtype=torch.long, device=images.device
@@ -158,26 +158,36 @@ def sampling(
         t_tensor = torch.full(
             (denoised_images.size(0),), t, dtype=torch.int64, device=images.device
         )
-        noise_pred = model(denoised_images, t).sample
+        
+        # Model now predicts v
+        v_pred = model(denoised_images, t).sample
+
+        # Convert v to epsilon for classifier guidance
+        alpha_bar_sqrt = torch.sqrt(model.noise_scheduler.alphas_cumprod[t])
+        one_minus_alpha_bar_sqrt = torch.sqrt(1 - model.noise_scheduler.alphas_cumprod[t])
+        epsilon_pred = (alpha_bar_sqrt * v_pred - denoised_images) / one_minus_alpha_bar_sqrt
 
         if classifier is not None:
-            # Compute classifier gradient and adjust noise prediction
+            # Compute classifier gradient and adjust epsilon prediction
             classifier_grad = classifier_gradient(
                 denoised_images, t_tensor, y, classifier, classifier_scale
             )
-            alpha_bar_sqrt = torch.sqrt(1 - model.noise_scheduler.alphas_cumprod[t])
-            noise_pred = noise_pred - alpha_bar_sqrt * classifier_grad
+            epsilon_pred = epsilon_pred - classifier_grad
 
-        # Perform denoising step
+        # Convert adjusted epsilon back to v
+        v_pred = (one_minus_alpha_bar_sqrt * epsilon_pred + denoised_images) / alpha_bar_sqrt
+
+        # Perform denoising step using v_pred
         with torch.no_grad():
             denoised_images = [
                 model.noise_scheduler.step(
-                    noise_pred[i], t_tensor[i], denoised_images[i]
+                    v_pred[i], t_tensor[i], denoised_images[i]
                 ).prev_sample
                 for i in range(len(denoised_images))
             ]
             denoised_images = torch.stack(denoised_images)
 
+        # Optional: Save intermediate results
         # with torch.no_grad():
         #     if (t + 1) % 50 == 0 or t == 0:
         #         plot_results(original_images.cpu().numpy(), images, denoised_images, batch_indices, output_dir, f"t={t+1}")
@@ -188,10 +198,11 @@ def sampling(
     return denoised_images
 
 
+
 def preprocess_labels(images):
-    # replace gray pixels into white
+    # replace forgraound into gray
     non_black_mask = images > 0
-    images[non_black_mask] = 1.0
+    images[non_black_mask] = 0.5
     return images
 
 
@@ -199,12 +210,15 @@ def preprocess_labels(images):
 if __name__ == "__main__":
     # settings
     num_sampling = 16
-    forward_timestep = 995
-    backward_timestep = 995
-    use_classifier_guidance = False
+    forward_timestep = 999
+    backward_timestep = 999
+    use_classifier_guidance = True
     num_inference_steps = 1000
     num_train_steps = 1000
-    noise_scheduler = get_named_beta_schedule("cosine", num_train_steps)
+    use_small_blob_scd = True
+    sample_from_pure_noise = True
+    blob_thres = 400
+    noise_scheduler = get_named_beta_schedule("cosine_vpred", num_train_steps)
 
     print("use_classifier_guidance: ", use_classifier_guidance)
 
@@ -215,10 +229,12 @@ if __name__ == "__main__":
         # "/mydata/dlbirhoui/chia/checkpoints/dm/epoch=210-val_loss=0.0100.ckpt",
         # "/mydata/dlbirhoui/chia/checkpoints/dm_mix/epoch=223-val_loss=0.0075.ckpt",
         # "/mydata/dlbirhoui/chia/checkpoints/dm_shift_atten/epoch=210-val_loss=0.0179.ckpt",
-        "/mydata/dlbirhoui/chia/checkpoints/dm_shift/epoch=210-val_loss=0.0179.ckpt",
+        # "/mydata/dlbirhoui/chia/checkpoints/dm_shift/epoch=210-val_loss=0.0179.ckpt",
         # "/mydata/dlbirhoui/chia/checkpoints/dm_shift_10warmup/epoch=210-val_loss=0.0179.ckpt",
         # "/mydata/dlbirhoui/chia/checkpoints/dm_shift_dark/last.ckpt",
         # "/mydata/dlbirhoui/chia/checkpoints/dm_shift_dark_rescale/epoch=23-val_loss=0.0198.ckpt",
+        # "/mydata/dlbirhoui/chia/checkpoints/dm_shift_vpred_new/last.ckpt",
+        "/mydata/dlbirhoui/chia/checkpoints/dm_shift_mix_v_small_blob_subsample/last.ckpt",
         DiffusionModel,
         config=TrainingConfig(num_epochs=0, batch_size=1),
         noise_scheduler=noise_scheduler,
@@ -235,16 +251,25 @@ if __name__ == "__main__":
         #     "/mydata/dlbirhoui/chia/checkpoints/classifier/attention_unet_classifier_cosine/epoch=124-val_loss=0.0703.ckpt",
         #     UnetAttentionClassifier,
         # )
-        classifier = load_model(
-            "/mydata/dlbirhoui/chia/checkpoints/classifier/attclf_normalize/epoch=76-val_loss=0.1194.ckpt",
-            UnetAttentionClassifier,
-        )
+        # classifier = load_model(
+        #     "/mydata/dlbirhoui/chia/checkpoints/classifier/attclf_normalize/epoch=76-val_loss=0.1194.ckpt",
+        #     UnetAttentionClassifier,
+        # )
+        classifier = load_model("/mydata/dlbirhoui/chia/checkpoints/classifier/clf_shift_v_small_blob/last.ckpt", UnetAttentionClassifier)
+
+        
 
     # Define batch of images to sample
     data_path = "/mydata/dlbirhoui/firat/OADAT"
-    scd_fname_h5 = "SCD_RawBP.h5"  # "SWFD_semicircle_RawBP.h5"
-    scd_key = "vc_BP"  # "sc_BP"
-    batch_indices = np.random.randint(0, 20000, size=num_sampling)
+    scd_fname_h5 = "SCD_RawBP.h5"  # "SWFD_semicircle_RawBP.h5"# 
+    scd_key = "sc_BP" # "labels" # 
+
+    if use_small_blob_scd:
+        small_blob_indices = np.load(f"/mydata/dlbirhoui/chia/oadat-ldm/small_blob_scd_indices_{blob_thres}.npy")
+        rand_ind = np.random.randint(0, len(small_blob_indices), size=num_sampling)
+        batch_indices = small_blob_indices[rand_ind]
+    else:
+        batch_indices = np.random.randint(0, 20000, size=num_sampling)
     print(f"Sampling from {scd_fname_h5}, key={scd_key}, indices={batch_indices}")
 
     # Load batch of images
@@ -258,19 +283,23 @@ if __name__ == "__main__":
     local_rng = torch.Generator(device="cuda")
     seed = 66
     local_rng.manual_seed(seed)
-    noise = torch.randn(scd_image_batch.shape, device=device, generator=local_rng) # + 0.001 * torch.randn(scd_image_batch.shape[0], scd_image_batch.shape[1], 1, 1, device=device, generator=local_rng)
+    noise = torch.randn(scd_image_batch.shape, device=device, generator=local_rng)
     noise_scheduler = diffusion_model.noise_scheduler
     noise_scheduler.set_timesteps(num_inference_steps=num_inference_steps)
-    noisy_images = noise_scheduler.add_noise(
-        scd_image_batch,
-        noise,
-        torch.full(
-            (scd_image_batch.size(0),),
-            forward_timestep,
-            dtype=torch.int64,
-            device=device,
-        ),
-    )
+    if sample_from_pure_noise:
+        noisy_images = noise
+        batch_indices = np.full(shape=num_sampling, fill_value=-1, dtype=int)
+    else:
+        noisy_images = noise_scheduler.add_noise(
+            scd_image_batch,
+            noise,
+            torch.full(
+                (scd_image_batch.size(0),),
+                forward_timestep,
+                dtype=torch.int64,
+                device=device,
+            ),
+        )
 
     output_dir = "./"
 
@@ -292,7 +321,7 @@ if __name__ == "__main__":
             denoised_images,
             batch_indices,
             output_dir,
-            f"mix_attclfnorm_f={forward_timestep}_b={backward_timestep}_s={classifier_scale}_seed={seed}",
+            f"clf_vpred_subsample_f=pure_noise_b={backward_timestep}_seed={seed}_blob={blob_thred}_denoised",
             "denoised",
         )
     else:
@@ -309,13 +338,20 @@ if __name__ == "__main__":
             denoised_images,
             batch_indices,
             output_dir,
-            f"swfd_shift_f={forward_timestep}_b={backward_timestep}_seed={seed}_denoised",
+            f"mix_vpred_subsample_f=pure_noise_b={backward_timestep}_seed={seed}_blob={blob_thred}_denoised",
             "denoised", # "noisy", "original"
         )
         # plot_batch_results(
         #     scd_image_batch,
         #     batch_indices,
         #     output_dir,
-        #     f"swfd_shift_f={forward_timestep}_b={backward_timestep}_seed={seed}_clean",
+        #     f"swfd_shift_vpred_f={forward_timestep}_b={backward_timestep}_seed={seed}_blob={blob_thred}_clean",
         #     "original",
+        # )
+        # plot_batch_results(
+        #     noisy_images,
+        #     batch_indices,
+        #     output_dir,
+        #     f"swfd_shift_vpred_f={forward_timestep}_b={backward_timestep}_seed={seed}_blob={blob_thred}_noisy",
+        #     "noisy",
         # )
