@@ -23,10 +23,16 @@ class LatentDiffusionModel(LightningModule):
         self.in_channels = self.latent_channels // (self.sample_size ** 2)
         self.out_channels = self.in_channels
         self.scale_factor = 0.02
+        self.mean_factor = -0.0407
         self.scale_factor_fixed = {
             "swfd": 0.02,
             "scd": 0.02,
             "prepicked_noise": 0.02
+        }
+        self.mean_factor_fixed = {
+            "swfd": -0.0407,
+            "scd": -0.0407,
+            "prepicked_noise": -0.0407
         }
         self.config = config
         self.vae = vae
@@ -209,6 +215,7 @@ class LatentDiffusionModel(LightningModule):
         mean, logvar = self.vae.encode(clean_image.unsqueeze(0))
         z = self.vae.reparameterize(mean, logvar)
         self.scale_factor_fixed[category] = 1. / z.std()
+        self.mean_factor_fixed[category] = z.mean()
         z = z.view(self.in_channels, self.sample_size, self.sample_size)
         noises = torch.randn(
             z.shape, generator=self.generator, device=self.device
@@ -260,11 +267,12 @@ class LatentDiffusionModel(LightningModule):
         means, logvars = self.vae.encode(batch)
         latents = self.vae.reparameterize(means, logvars)
         self.scale_factor = 1. / latents.flatten().std()
+        self.mean_factor = latents.flatten().mean()
 
     def training_step(self, batch: torch.Tensor, batch_idx: int) -> torch.Tensor:
         bs = batch.shape[0]
         means, logvars = self.vae.encode(batch)
-        latents = self.vae.reparameterize(means, logvars) * self.scale_factor
+        latents = (self.vae.reparameterize(means, logvars) - self.mean_factor) * self.scale_factor
         latents = latents.view(bs, self.out_channels, self.sample_size, self.sample_size) 
 
         noises = torch.randn(latents.shape, device=self.device)
@@ -301,7 +309,7 @@ class LatentDiffusionModel(LightningModule):
         # fixed seed during validation to ensure the noise is always the same
         bs = batch.shape[0]
         means, logvars = self.vae.encode(batch)
-        latents = self.vae.reparameterize(means, logvars) * self.scale_factor
+        latents = (self.vae.reparameterize(means, logvars) - self.mean_factor) * self.scale_factor
         latents = latents.view(bs, self.out_channels, self.sample_size, self.sample_size) 
         noises = torch.randn(
             latents.shape, generator=self.generator, device=self.device
@@ -378,7 +386,7 @@ class LatentDiffusionModel(LightningModule):
                 # Update denoised images
                 denoised_latents[active_mask] = torch.stack(step_result)
 
-        denoised_latents = 1. / self.scale_factor_fixed[category] * denoised_latents
+        denoised_latents = (1. / self.scale_factor_fixed[category]) * (denoised_latents + self.mean_factor_fixed[category])
         # decode from latent space to image space
         denoised_images = self.vae.decode(denoised_latents.flatten(start_dim=1))
 
