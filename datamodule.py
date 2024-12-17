@@ -18,7 +18,6 @@ class OADATDataModule(LightningDataModule):
         batch_size: int,
         num_workers: int = 4,
         mix_swfd_scd: bool = False,
-        in_channel: int = 1,
         indices_swfd: list[int] = np.load(
                 "/mydata/dlbirhoui/chia/oadat-ldm/config/train_sc_BP_indices.npy"
             ),
@@ -33,6 +32,7 @@ class OADATDataModule(LightningDataModule):
         self.indices_scd = indices_scd
         print('train swfd size: ', len(self.indices_swfd))
         print('train scd size: ', len(self.indices_scd))
+        print('mix_swfd_scd: ', self.mix_swfd_scd)
 
 
     def prepare_data(self) -> None:

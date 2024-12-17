@@ -39,11 +39,12 @@ class NoisyDataset(dataset.Dataset):
         self.noise_scheduler = noise_scheduler
         self.label = label
         self.num_timesteps = noise_scheduler.config.num_train_timesteps
+        print("len inds: ", len(self.inds))
 
     def __getitem__(self, index):
         # Load the base image data as before
         with h5py.File(self.fname_h5, "r") as fh:
-            x = fh[self.key][index, ...]
+            x = fh[self.key][self.inds[index], ...] 
             x = x[None, ...]  # Add a channel dimension [1, H, W]
             if self.transforms is not None:
                 x = self.transforms(x)

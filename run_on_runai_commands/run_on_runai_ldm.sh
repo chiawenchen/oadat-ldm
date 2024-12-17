@@ -1,0 +1,1 @@
+python train_ldm.py --oadat_dir /mydata/dlbirhoui/firat/OADAT --num_epochs 250 --gpus 1 --batch_size 128 --num_workers 4 --job_name ldm-size16-scale-factor --noise_schedule cosine_dark

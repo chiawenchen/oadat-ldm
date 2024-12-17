@@ -22,7 +22,7 @@ import dataset
 from datamodule import OADATDataModule
 
 # from models.VAE import VAE
-from models.AutoenconderKL import VAE
+from models.VAE import VAE
 
 torch.set_float32_matmul_precision("medium")
 
@@ -32,18 +32,19 @@ def main():
     # Parse command-line arguments
     args = parse_arguments()
 
-    # Set up training configuration
-    config = ClassifierConfig()
+    # sample directory
+    sample_dir = os.path.join("/mydata/dlbirhoui/chia/samples/vae", args.job_name)
+    os.makedirs(sample_dir, exist_ok=True)
 
     # vae model
-    model = VAE()
+    model = VAE(sample_dir=sample_dir)
 
     # Set up logger
     logger = WandbLogger(
         project="vae",
         name=args.job_name,
         log_model=False,
-        config=config.__dict__
+        # config=config.__dict__
     )
 
     # DataModule
@@ -81,6 +82,7 @@ def main():
             checkpoint_callback,
         ],
         check_val_every_n_epoch=1,
+        num_sanity_val_steps=0,
         # precision='16-mixed',
     )
 

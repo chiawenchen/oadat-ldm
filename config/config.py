@@ -4,6 +4,23 @@ import argparse
 from dataclasses import dataclass, field
 import torch
 
+import ast
+
+def parse_numbers(numbers_str):
+    """
+    Parse a string like '[1, 2, 3, 4]' into a Python list of numbers.
+    """
+    try:
+        # Safely evaluate the string to a Python list
+        numbers = ast.literal_eval(numbers_str)
+        if isinstance(numbers, list):
+            return numbers
+        else:
+            raise ValueError
+    except Exception:
+        raise argparse.ArgumentTypeError("Invalid format for --numbers. Use: [1, 2, 3, 4]")
+
+
 @dataclass
 class TrainingConfig:
     # default hyperparameters
@@ -38,6 +55,50 @@ class ClassifierConfig:
     learning_rate: float = 1e-4
     num_train_timesteps: int = 1000
 
+@dataclass
+class LDMTrainingConfig:
+    # default hyperparameters
+    image_size: int = 256
+    latent_channels: int = 2
+    latent_size: int = 128
+    num_down_blocks: int = 1
+    num_up_blocks: int = 1
+    block_out_channels: list = field(default_factory=lambda: [32, 64])
+    kl_loss_weight: float = 0.001
+    batch_size: int = 128
+    num_epochs: int = 250
+    learning_rate: float = 1e-4
+    lr_warmup_epochs: int = 5
+    save_image_epochs: int = 5
+    seed: int = 42
+    num_train_timesteps: int = 1000
+    sample_dir: str = None
+    sample_num: int = 11
+    output_dir: str = "/mydata/dlbirhoui/chia/"  # directory to save models and images
+    vae_ckpt_dir: str = "/mydata/dlbirhoui/chia/checkpoints/vae/vae/last.ckpt"
+# @dataclass
+# class VQVAETrainingConfig:
+#     # Existing parameters
+#     num_epochs: int = 250
+#     batch_size: int = 128
+#     vae_ckpt_dir: str = "/mydata/dlbirhoui/chia/checkpoints/vae/vae/last.ckpt"
+#     seed: int = 42
+#     in_channels: int = 1
+#     out_channels: int = 1
+#     latent_channels: int = 64
+#     sample_size: int = 256
+#     block_out_channels: list = field(default_factory=lambda: [32, 64, 128, 256])
+#     num_down_blocks: int = 4
+#     num_up_blocks: int = 4
+#     save_image_epochs: int = 5
+#     sample_dir: str = './samples'
+#     learning_rate: float = 1e-4
+#     lr_warmup_epochs: int = 5
+#     # New parameters for VQModel
+#     num_vq_embeddings: int = 512  # Size of the codebook
+#     vq_embed_dim: int = 256       # Dimension of each embedding vector
+#     latent_size: int = 32         # Spatial size of the latent representation
+
 
 def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
@@ -70,6 +131,11 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument(
         "--classifier", default="resnet", type=str,
         help="Classifier type",
+    )
+    parser.add_argument(
+        "--block_out_channels",
+        type=parse_numbers,
+        help="block_out_channels",
     )
     # parser.add_argument(
     #     "--balance_class",

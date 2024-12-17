@@ -83,16 +83,45 @@ class Dataset:
 
     def __getitem__(self, index): 
         with h5py.File(self.fname_h5, 'r') as fh:
-            x = fh[self.key][index,...]
+            # x = fh[self.key][index,...]
+            x = fh[self.key][self.inds[index], ...]  # Use self.inds to map indices
             x = x[None,...] ## add a channel dimension [1, H, W]
             if self.transforms is not None:
                 x = self.transforms(x)
         return x
 
-    def __iter__(self):
-        inds = np.copy(self.inds)
-        if self.shuffle:
-            self.prng.shuffle(inds)
-        for i in inds:
-            s = self.__getitem__(index=i)
-            yield s
+    # def __iter__(self):
+    #     print("Using __iter__ of the customized dataset!")
+    #     inds = np.copy(self.inds)
+    #     if self.shuffle:
+    #         self.prng.shuffle(inds)
+    #     for i in inds:
+    #         s = self.__getitem__(index=i)
+    #         yield s
+
+class LabeledDataset(Dataset):
+    def __init__(
+        self,
+        fname_h5,
+        key,
+        transforms,
+        inds,
+        label,
+        shuffle=False,
+        **kwargs,
+    ):
+        super().__init__(fname_h5, key, transforms, inds, shuffle=shuffle, **kwargs)
+        self.label = label
+        print("len inds: ", len(self.inds))
+
+    def __getitem__(self, index):
+        # Load the base image data as before
+        with h5py.File(self.fname_h5, "r") as fh:
+            x = fh[self.key][self.inds[index], ...] 
+            x = x[None, ...]  # Add a channel dimension [1, H, W]
+            if self.transforms is not None:
+                x = self.transforms(x)
+
+        # label = torch.tensor(self.label, dtype=torch.long)
+
+        return x, self.label

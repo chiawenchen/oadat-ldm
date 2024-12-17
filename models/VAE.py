@@ -11,9 +11,9 @@ from PIL import Image
 from torch.optim.lr_scheduler import LinearLR
 
 class VAE(LightningModule):
-    def __init__(self, in_channels=1, latent_dim=4, img_size=256, block_out_channels=(64, 128, 256, 512)):
+    def __init__(self, sample_dir='./', in_channels=1, latent_dim=512, img_size=256, block_out_channels=(64, 128, 256, 512)):
         super().__init__()
-        
+        self.sample_dir = sample_dir
         self.latent_dim = latent_dim
         
         # Encoder
@@ -70,7 +70,10 @@ class VAE(LightningModule):
         """
         std = torch.exp(0.5 * logvar)
         eps = torch.randn_like(std)
-        return mean + eps * std
+        sample = mean + eps * std
+        # print(f"Latent mean: {sample.mean()}, Latent std: {sample.std()}")
+        # print(f"Latent min: {sample.min()}, Latent max: {sample.max()}")
+        return sample
     
     def decode(self, z):
         """
@@ -78,6 +81,8 @@ class VAE(LightningModule):
         """
         features = self.latent_to_features(z).view(-1, 512, 4, 4)  # Reshape to feature map
         reconstruction = self.decoder(features)
+        # print(f"Reconstruction mean: {reconstruction.mean()}, Reconstruction std: {reconstruction.std()}")
+        # print(f"Reconstruction min: {reconstruction.min()}, Reconstruction max: {reconstruction.max()}")
         return reconstruction
     
     def forward(self, x):
@@ -93,9 +98,9 @@ class VAE(LightningModule):
         """
         Computes the VAE loss: reconstruction + KL divergence.
         """
-        recon_loss = F.mse_loss(reconstructed, original, reduction="sum")
+        recon_loss = F.mse_loss(reconstructed, original, reduction="mean")
         kl_loss = -0.5 * torch.sum(1 + logvar - mean.pow(2) - logvar.exp())
-        # kl_loss /= original.numel()  # Normalize by the number of elements
+        kl_loss /= original.numel()  # Normalize by the number of elements
         return recon_loss + 0.001 * kl_loss, recon_loss, kl_loss
 
     def training_step(self, batch, batch_idx):
@@ -108,9 +113,9 @@ class VAE(LightningModule):
         reconstructed, mean, logvar = self.forward(images)
         loss, recon_loss, kl_loss = self.compute_loss(reconstructed, images, mean, logvar)
         
-        self.log("train_loss", loss, on_step=True, on_epoch=True, prog_bar=True)
-        self.log("train_recon_loss", recon_loss, on_step=True, on_epoch=True)
-        self.log("train_kl_loss", kl_loss, on_step=True, on_epoch=True)
+        self.log("train_loss", loss, on_step=False, on_epoch=True, prog_bar=True)
+        self.log("train_recon_loss", recon_loss, on_step=False, on_epoch=True)
+        self.log("train_kl_loss", kl_loss, on_step=False, on_epoch=True)
         
         return loss
 
@@ -140,11 +145,11 @@ class VAE(LightningModule):
         )
         return [optimizer], [lr_scheduler]
 
-    def plot(self, originals, reconstructions, n_images=5):
+    def plot(self, originals, reconstructions, n_images=10):
         """
         Create a grid of original and reconstructed images with colorbars.
         """
-        fig, axes = plt.subplots(2, n_images, figsize=(15, 5))
+        fig, axes = plt.subplots(2, n_images, figsize=(30, 10))
         
         # Loop through the selected images
         for i in range(n_images):
@@ -153,26 +158,18 @@ class VAE(LightningModule):
             img = originals[i].squeeze(0).cpu().numpy()  # Convert to NumPy for plotting
             im = ax.imshow(img, cmap='gray')
             ax.axis('off')
-            if i == 0:
-                ax.set_title("Originals", fontsize=12)
-            
-            # Add color bar for the first column
-            if i == 0:
-                cbar = plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
-                cbar.ax.tick_params(labelsize=8)
+            ax.set_title("Originals", fontsize=10)
+            cbar = plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+            cbar.ax.tick_params(labelsize=8)
             
             # Reconstructed images
             ax = axes[1, i]
             img = reconstructions[i].squeeze(0).cpu().numpy()  # Convert to NumPy for plotting
             im = ax.imshow(img, cmap='gray')
             ax.axis('off')
-            if i == 0:
-                ax.set_title("Reconstructed", fontsize=12)
-            
-            # Add color bar for the first column
-            if i == 0:
-                cbar = plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
-                cbar.ax.tick_params(labelsize=8)
+            ax.set_title("Reconstructed", fontsize=10)          
+            cbar = plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+            cbar.ax.tick_params(labelsize=8)
         
         plt.tight_layout()
         return fig
@@ -183,30 +180,60 @@ class VAE(LightningModule):
         """
         # Only log every 5 epochs
         if self.current_epoch % 5 == 0:
-            # Get a sample batch from the validation dataloader
-            val_loader = self.trainer.datamodule.val_dataloader()
-            batch = next(iter(val_loader))
-            images = batch.to(self.device)
+            # Get the validation dataloader
+            val_dataloader = self.trainer.datamodule.val_dataloader()
             
-            # Forward pass through the VAE
-            reconstructed, _, _ = self.forward(images)
+            val_iterator = iter(val_dataloader)
+            swfd_images = []
+            scd_images = []
+
+            for idx, batch in enumerate(val_iterator):
+                if idx < 5:  # First 5 batches
+                    swfd_images.append(batch[0].unsqueeze(0))
+                if idx >= len(val_dataloader) - 5:  # Last 5 batches
+                    scd_images.append(batch[0].unsqueeze(0))
             
-            # Select first 5 images and their reconstructions
-            n_images = 5
-            original_images = images[:n_images]
-            reconstructed_images = reconstructed[:n_images]
+            # Combine images
+            swfd_images = torch.cat(swfd_images, dim=0)
+            scd_images = torch.cat(scd_images, dim=0)
+            originals = torch.cat([swfd_images, scd_images], dim=0).to(self.device)
             
-            # Generate the plot
-            fig = self.plot(original_images, reconstructed_images, n_images=n_images)
+            # Generate reconstructions
+            reconstructed, _, _ = self.forward(originals)
             
-            # Save the plot to a temporary file
-            temp_dir = "/mydata/dlbirhoui/chia/samples/vae"
-            os.makedirs(temp_dir, exist_ok=True)
-            file_path = os.path.join(temp_dir, f"epoch_{self.current_epoch}_comparison.png")
-            plt.savefig(file_path, format="png")
+            # Plot and save the figure
+            file_path = f"{self.sample_dir}/validation_epoch_{self.current_epoch}.png"
+            fig = self.plot(originals, reconstructed, n_images=10)
+            fig.savefig(file_path)
             plt.close(fig)
             
             # Log the saved image to WandB
             self.logger.experiment.log({
                 "Original vs Reconstructed": wandb.Image(file_path, caption=f"Epoch {self.current_epoch}: Originals (Top) vs Reconstructed (Bottom)")
+            })
+
+            # randomly sample 5 noises
+            num_samples = 5
+            random_latents = torch.randn(num_samples, self.latent_dim).to(self.device)
+
+            # generate images by decoding the noise
+            generated_images = self.decode(random_latents)
+
+            # Plot and save the figure
+            gen_file_path = f"{self.sample_dir}/generated_epoch_{self.current_epoch}.png"
+            fig, axes = plt.subplots(1, num_samples, figsize=(15, 5))
+            for i in range(num_samples):
+                ax = axes[i]
+                img = generated_images[i].squeeze(0).cpu().detach().numpy()  # Convert to NumPy
+                im = ax.imshow(img, cmap='gray')
+                ax.axis('off')
+                ax.set_title(f"Sample {i+1}", fontsize=10)
+                plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+            plt.tight_layout()
+            plt.savefig(gen_file_path)
+            plt.close(fig)
+            
+            # Log the generated images to WandB
+            self.logger.experiment.log({
+                "Generated Images": wandb.Image(gen_file_path, caption=f"Epoch {self.current_epoch}: Generated Images")
             })

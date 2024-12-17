@@ -10,6 +10,7 @@ import dataset
 from config.config import TrainingConfig, ClassifierConfig
 from models.DDIM import DiffusionModel
 from models.UnetClassifier import UnetAttentionClassifier
+from models.ResNetClassifier import ResNetClassifier
 from utils import (
     get_last_checkpoint,
     get_named_beta_schedule,
@@ -32,6 +33,9 @@ def load_model(checkpoint_path, model_class, config=None, noise_scheduler=None, 
     elif issubclass(model_class, UnetAttentionClassifier):
         config = ClassifierConfig()
         model = model_class.load_from_checkpoint(checkpoint_path, config.__dict__)
+    elif issubclass(model_class, ResNetClassifier):
+        config = ClassifierConfig()
+        model = model_class.load_from_checkpoint(checkpoint_path)
     else:
         raise ValueError(f"Unsupported model class: {model_class}")
     
@@ -152,9 +156,9 @@ def sampling(
     model,
     images,
     timestep,
-    # original_images,
-    # batch_indices,
-    # output_dir,
+    original_images,
+    batch_indices,
+    output_dir,
     classifier=None,
     classifier_scale=1.0,
     target_class=1,
@@ -162,7 +166,6 @@ def sampling(
 ):
     """ Perform diffusion sampling with or without classifier guidance. """
     denoised_images = images
-
     # guide towards the target class: swfd
     if classifier is not None:
         y = torch.full(
@@ -206,7 +209,7 @@ def sampling(
             denoised_images = torch.stack(denoised_images)
 
         # with torch.no_grad():
-        #     if (t + 1) % 50 == 0 or t == 0:
+        #     if (t + 1) % 10 == 0 or t == 0:
         #         plot_single_image(original_images, images, denoised_images, batch_indices, output_dir, f"t={t+1}")
 
         # Clear unused memory
@@ -214,21 +217,26 @@ def sampling(
 
     return denoised_images
 
-def generate_filename(model_name, forward_timestep, backward_timestep, seed, category):
+def generate_filename(model_name, forward_timestep, backward_timestep, seed, classifier_scale, category):
     """Generate an adjustable output filename."""
-    return f"{model_name}_s=10_f={forward_timestep}_b={backward_timestep}_seed={seed}_{category}.png"
+    scale = ""
+    if classifier_scale != None:
+        scale = f"_s={classifier_scale}"
+    return f"{model_name}{scale}_f={forward_timestep}_b={backward_timestep}_seed={seed}_{category}.png"
 
 # Main Execution
 if __name__ == "__main__":
     # settings
     num_sampling = 16
-    forward_timestep = 900
-    backward_timestep = 900
+    forward_timestep = 5
+    backward_timestep = 500
     sample_from_pure_noise = False
-    model_name = "cf_scd"
-    plot_results = ['denoised', 'original', 'noisy']
+    model_name = "cf_new_scd"
+    plot_results = ['denoised', 'original', 'noisy'] # 
     use_classifier_guidance = True
-    classifier_scale = 10
+    classifier_scale = 20
+    if use_classifier_guidance == False:
+        classifier_scale = None
     config = TrainingConfig(num_epochs=0, batch_size=1)
     seed = config.seed
 
@@ -239,7 +247,7 @@ if __name__ == "__main__":
 
     # Load models
     diffusion_model = load_model(
-        "/mydata/dlbirhoui/chia/checkpoints/dm_shift_v_rescale/last.ckpt",
+        "/mydata/dlbirhoui/chia/checkpoints/dm_shift_v_rescale_/last.ckpt",
         DiffusionModel,
         config=config,
         noise_scheduler=noise_scheduler,
@@ -249,6 +257,8 @@ if __name__ == "__main__":
         classifier = load_model(
             "/mydata/dlbirhoui/chia/checkpoints/classifier/clf_v_atten/last.ckpt",
             UnetAttentionClassifier,
+            # "/mydata/dlbirhoui/chia/checkpoints/classifier/resnet_classifier/last.ckpt",
+            # ResNetClassifier
         )
     
     # Check models
@@ -298,11 +308,11 @@ if __name__ == "__main__":
 
     # Plot original and noisy images
     if 'original' in plot_results and sample_from_pure_noise == False:
-        filename = generate_filename(model_name, forward_timestep, backward_timestep, seed, category="original")
+        filename = generate_filename(model_name, forward_timestep, backward_timestep, seed, classifier_scale, category="original")
         plot_batch_results(scd_image_batch, batch_indices, output_dir, filename, "original")
 
     if 'noisy' in plot_results:
-        filename = generate_filename(model_name, forward_timestep, backward_timestep, seed, category="noisy")
+        filename = generate_filename(model_name, forward_timestep, backward_timestep, seed, classifier_scale, category="noisy")
         plot_batch_results(noisy_images, batch_indices, output_dir, filename, "noisy")
 
     if 'denoised' not in plot_results:
@@ -314,6 +324,7 @@ if __name__ == "__main__":
         forward_timestep,
         backward_timestep,
         seed,
+        classifier_scale
         category="denoised",
     )
 
@@ -322,9 +333,9 @@ if __name__ == "__main__":
         diffusion_model,
         noisy_images,
         backward_timestep,
-        # scd_image_batch,
-        # batch_indices,
-        # output_dir,
+        scd_image_batch,
+        batch_indices,
+        output_dir,
         classifier=classifier,
         classifier_scale=classifier_scale,
         prediction_type='v_prediction'
