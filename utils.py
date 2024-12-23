@@ -72,29 +72,29 @@ transforms = v2.Compose(
 #     ]
 # )
 # after normalization, the range would be -4.5494004521 to 22.5288367428
-# SWFD_MEAN = 0.001611371641047299 # 0.16804751753807068 # 
-# SWFD_STD = 0.04431603103876114 # 0.03693051263689995 # 
-# SCD_MEAN = 0.0015873634681094503 # 0.1689334511756897 # 
-# SCD_STD = 0.04384154212224777 # 0.07449506968259811 # 
+SWFD_MEAN = 0.001611371641047299 # 0.16804751753807068 # 
+SWFD_STD = 0.04431603103876114 # 0.03693051263689995 # 
+SCD_MEAN = 0.0015873634681094503 # 0.1689334511756897 # 
+SCD_STD = 0.04384154212224777 # 0.07449506968259811 # 
 
-# swfd_norm_transforms = v2.Compose(
-#     [
-#         v2.Lambda(lambda x: np.squeeze(x, axis=0) if x.shape[0] == 1 else x),  # Remove unnecessary channel for grayscale
-#         v2.Lambda(lambda x: np.clip(x / np.max(x), a_min=-0.2, a_max=None)),  # Normalize and clip
-#         v2.Lambda(lambda x: np.expand_dims(x, axis=-1) if len(x.shape) == 2 else x),  # Ensure HWC format for ToTensor
-#         v2.ToImage(),  # Convert to tensor (HWC → CHW)
-#         v2.ToDtype(torch.float32, scale=True),
-#         v2.Normalize([SWFD_MEAN], [SWFD_STD]),  # Normalize using mean and std
-#     ]
-# )
+swfd_transforms = v2.Compose(
+    [
+        v2.Lambda(lambda x: np.squeeze(x, axis=0) if x.shape[0] == 1 else x),  # Remove unnecessary channel for grayscale
+        v2.Lambda(lambda x: np.clip(x / np.max(x), a_min=-0.2, a_max=None)),  # scale clip function
+        v2.Lambda(lambda x: np.expand_dims(x, axis=-1) if len(x.shape) == 2 else x),  # Ensure HWC format for ToTensor
+        v2.ToImage(),  # Convert to tensor (HWC → CHW)
+        v2.ToDtype(torch.float32, scale=True),
+        v2.Normalize([SWFD_MEAN], [SWFD_STD]),  # Normalize using mean and std
+    ]
+)
 
-# scd_norm_transforms = v2.Compose(
-#     [
-#         v2.Lambda(lambda x: np.squeeze(x, axis=0) if x.shape[0] == 1 else x),  # Remove unnecessary channel for grayscale
-#         v2.Lambda(lambda x: np.clip(x / np.max(x), a_min=-0.2, a_max=None)),  # Normalize and clip
-#         v2.Lambda(lambda x: np.expand_dims(x, axis=-1) if len(x.shape) == 2 else x),  # Ensure HWC format for ToTensor
-#         v2.ToImage(),  # Convert to tensor (HWC → CHW)
-#         v2.ToDtype(torch.float32, scale=True),
-#         v2.Normalize([SCD_MEAN], [SCD_STD]),  # Normalize using mean and std
-#     ]
-# )
+scd_transforms = v2.Compose(
+    [
+        v2.Lambda(lambda x: np.squeeze(x, axis=0) if x.shape[0] == 1 else x),  # Remove unnecessary channel for grayscale
+        v2.Lambda(lambda x: np.clip(x / np.max(x), a_min=-0.2, a_max=None)),  # scale clip function
+        v2.Lambda(lambda x: np.expand_dims(x, axis=-1) if len(x.shape) == 2 else x),  # Ensure HWC format for ToTensor
+        v2.ToImage(),  # Convert to tensor (HWC → CHW)
+        v2.ToDtype(torch.float32, scale=True),
+        v2.Normalize([SCD_MEAN], [SCD_STD]),  # Normalize using mean and std
+    ]
+)

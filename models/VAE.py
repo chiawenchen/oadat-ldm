@@ -199,8 +199,14 @@ class VAE(LightningModule):
             originals = torch.cat([swfd_images, scd_images], dim=0).to(self.device)
             
             # Generate reconstructions
-            reconstructed, _, _ = self.forward(originals)
-            
+            # reconstructed, _, _ = self.forward(originals)
+
+            mean, logvar = self.encode(originals)
+            z = self.reparameterize(mean, logvar)
+            print(f"Latent mean: {z.mean()}, Latent std: {z.std()}")
+            print(f"Latent min: {z.min()}, Latent max: {z.max()}")
+            reconstructed = self.decode(z)
+
             # Plot and save the figure
             file_path = f"{self.sample_dir}/validation_epoch_{self.current_epoch}.png"
             fig = self.plot(originals, reconstructed, n_images=10)

@@ -19,9 +19,9 @@ from diffusers import DDIMScheduler
 from config.config import ClassifierConfig, parse_arguments
 from utils import get_last_checkpoint, get_named_beta_schedule
 import dataset
-from datamodule import OADATDataModule
+from datamodule_normalization import OADATDataModule
 
-from models.VQVAE import VQVAE
+# from models.VQVAE import VQVAE
 from models.VAE import VAE
 
 torch.set_float32_matmul_precision("medium")
@@ -37,7 +37,7 @@ def main():
     os.makedirs(sample_dir, exist_ok=True)
 
     # vae model
-    model = VQVAE(sample_dir=sample_dir)
+    model = VAE(sample_dir=sample_dir)
 
     # Set up logger
     logger = WandbLogger(
@@ -56,7 +56,8 @@ def main():
         num_workers=args.num_workers,
         mix_swfd_scd=args.mix_swfd_scd,
         indices_swfd=indices_swfd,
-        indices_scd=indices_scd
+        indices_scd=indices_scd,
+        use_mean_std_transforms=True
     )
 
     # Set up checkpoint callback

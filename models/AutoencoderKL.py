@@ -15,8 +15,8 @@ class VAE(LightningModule):
     def __init__(self, config):
         super().__init__()
 
-        # down_block_types = tuple("DownEncoderBlock2D" for _ in range(config.num_down_blocks))
-        # up_block_types = tuple("UpDecoderBlock2D" for _ in range(config.num_up_blocks))
+        down_block_types = tuple("DownEncoderBlock2D" for _ in range(config.num_down_blocks))
+        up_block_types = tuple("UpDecoderBlock2D" for _ in range(config.num_up_blocks))
         block_out_channels = tuple(config.block_out_channels)
 
         self.vae = AutoencoderKL(
@@ -26,8 +26,8 @@ class VAE(LightningModule):
             sample_size=config.image_size,
             block_out_channels=block_out_channels,
             norm_num_groups=4,
-            down_block_types=("DownEncoderBlock2D", "DownEncoderBlock2D"),# ("DownEncoderBlock2D", "DownEncoderBlock2D", "DownEncoderBlock2D", "AttnDownEncoderBlock2D", "AttnDownEncoderBlock2D"),
-            up_block_types=("UpDecoderBlock2D", "UpDecoderBlock2D")# ("AttnUpDecoderBlock2D", "AttnUpDecoderBlock2D", "UpDecoderBlock2D", "UpDecoderBlock2D", "UpDecoderBlock2D")
+            down_block_types=down_block_types,
+            up_block_types=up_block_types
         )
         self.kl_loss_weight = config.kl_loss_weight
         self.config = config

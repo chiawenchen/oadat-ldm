@@ -59,12 +59,12 @@ class ClassifierConfig:
 class LDMTrainingConfig:
     # default hyperparameters
     image_size: int = 256
-    latent_channels: int = 2
-    latent_size: int = 128
-    num_down_blocks: int = 1
-    num_up_blocks: int = 1
-    block_out_channels: list = field(default_factory=lambda: [32, 64])
-    kl_loss_weight: float = 0.001
+    latent_channels: int = 3
+    latent_size: int = 8
+    num_down_blocks: int = 4
+    num_up_blocks: int = 4
+    block_out_channels: list = field(default_factory=lambda: [64, 64, 128, 256])
+    kl_loss_weight: float = 1.0e-06
     batch_size: int = 128
     num_epochs: int = 250
     learning_rate: float = 1e-4
@@ -75,7 +75,7 @@ class LDMTrainingConfig:
     sample_dir: str = None
     sample_num: int = 11
     output_dir: str = "/mydata/dlbirhoui/chia/"  # directory to save models and images
-    vae_ckpt_dir: str = "/mydata/dlbirhoui/chia/checkpoints/vae/vae/last.ckpt"
+    vae_ckpt_dir: str = "/mydata/dlbirhoui/chia/checkpoints/vae/vae/epoch=244-val_loss=0.0025.ckpt"
 # @dataclass
 # class VQVAETrainingConfig:
 #     # Existing parameters
