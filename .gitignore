@@ -342,3 +342,7 @@ tags
 lightning_logs
 wandb
 *.png
+
+# taming
+*vgg.pth
+*taming-transformers
