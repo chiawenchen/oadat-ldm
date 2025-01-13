@@ -53,7 +53,7 @@ class Dataset_Paired_Input_Output:
             yield s
 
 class Dataset:
-    def __init__(self, fname_h5, key, transforms, inds, shuffle=False, **kwargs):
+    def __init__(self, fname_h5, key, transforms, inds, label=None, shuffle=False, **kwargs):
         self.fname_h5 = fname_h5
         self.key = key
         self.inds = inds
@@ -62,6 +62,7 @@ class Dataset:
         self.prng = kwargs.get('prng', np.random.RandomState(42))
         self.len = None
         self._check_data()
+        self.label = label
     
     def _check_data(self,):
         len_ = None
@@ -88,6 +89,8 @@ class Dataset:
             x = x[None,...] ## add a channel dimension [1, H, W]
             if self.transforms is not None:
                 x = self.transforms(x)
+        if self.label is not None:
+            return x, self.label
         return x
 
     # def __iter__(self):
@@ -99,29 +102,26 @@ class Dataset:
     #         s = self.__getitem__(index=i)
     #         yield s
 
-class LabeledDataset(Dataset):
-    def __init__(
-        self,
-        fname_h5,
-        key,
-        transforms,
-        inds,
-        label,
-        shuffle=False,
-        **kwargs,
-    ):
-        super().__init__(fname_h5, key, transforms, inds, shuffle=shuffle, **kwargs)
-        self.label = label
-        print("len inds: ", len(self.inds))
+# class LabeledDataset(Dataset):
+#     def __init__(
+#         self,
+#         fname_h5,
+#         key,
+#         transforms,
+#         inds,
+#         label,
+#         shuffle=False,
+#         **kwargs,
+#     ):
+#         super().__init__(fname_h5, key, transforms, inds, shuffle=shuffle, **kwargs)
+#         self.label = label
+#         print("len inds: ", len(self.inds))
 
-    def __getitem__(self, index):
-        # Load the base image data as before
-        with h5py.File(self.fname_h5, "r") as fh:
-            x = fh[self.key][self.inds[index], ...] 
-            x = x[None, ...]  # Add a channel dimension [1, H, W]
-            if self.transforms is not None:
-                x = self.transforms(x)
-
-        # label = torch.tensor(self.label, dtype=torch.long)
-
-        return x, self.label
+#     def __getitem__(self, index):
+#         # Load the base image data as before
+#         with h5py.File(self.fname_h5, "r") as fh:
+#             x = fh[self.key][self.inds[index], ...] 
+#             x = x[None, ...]  # Add a channel dimension [1, H, W]
+#             if self.transforms is not None:
+#                 x = self.transforms(x)
+#         return x, self.label

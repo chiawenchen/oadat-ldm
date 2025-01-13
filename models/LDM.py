@@ -13,17 +13,16 @@ import os
 import numpy as np
 import matplotlib.pyplot as plt
 import math
-from models.VAE import VAE
+from models.AutoencoderKL import VAE
 
 class LatentDiffusionModel(LightningModule):
     def __init__(self, config: LDMTrainingConfig, noise_scheduler: DDIMScheduler, vae: VAE) -> None:
         super().__init__()
-        self.latent_channels = 512
-        self.sample_size = 4
-        self.in_channels = self.latent_channels // (self.sample_size ** 2)
+        self.sample_size = config.image_size // 2 ** (config.num_down_blocks - 1)
+        self.in_channels = config.latent_channels
         self.out_channels = self.in_channels
-        self.min_factor = -0.12
-        self.max_factor = 0.047
+        self.min_factor = -22
+        self.max_factor = 22
         self.min_factor_fixed = {
             "swfd": -0.12,
             "scd": -0.12,
@@ -43,30 +42,24 @@ class LatentDiffusionModel(LightningModule):
             layers_per_block=2,
             center_input_sample=True,
             block_out_channels=(
-                # 32,
-                # 32,
-                # 128,
-                # 64,
+                64,
+                128,
+                192,
                 256,
-                # 128,
             ),
             down_block_types=(
-                # "DownBlock2D",
-                # "DownBlock2D",
-                # "DownBlock2D",
-                # "DownBlock2D",
+                "DownBlock2D",
+                "DownBlock2D",
+                "DownBlock2D",
                 "AttnDownBlock2D",
-                # "DownBlock2D",
                 # "DownBlock2D",
             ),
             up_block_types=(
                 # "UpBlock2D",
-                # "UpBlock2D",
                 "AttnUpBlock2D",
-                # "UpBlock2D",
-                # "UpBlock2D",
-                # "UpBlock2D",
-                # "UpBlock2D",
+                "UpBlock2D",
+                "UpBlock2D",
+                "UpBlock2D",
             ),
         )
         self.noise_scheduler = noise_scheduler
@@ -165,7 +158,7 @@ class LatentDiffusionModel(LightningModule):
         num_sampling: int = 5,
     ) -> None:        
         noises = torch.randn(
-            (num_sampling, self.out_channels, self.sample_size, self.sample_size), generator=self.generator, device=self.device
+            (num_sampling, self.in_channels, self.sample_size, self.sample_size), generator=self.generator, device=self.device
         )
 
         for idx in range(len(noises)):
@@ -206,8 +199,7 @@ class LatentDiffusionModel(LightningModule):
             wandb_name=f"{category}_clean",
         )
 
-        clean_image_copy = clean_image.clone()
-        reconstructed, _, _ = self.vae.forward(clean_image_copy.unsqueeze(0))
+        reconstructed, _ = self.vae.forward(clean_image.unsqueeze(0))
 
         # save clean image
         self.save_clean_image(
@@ -226,25 +218,23 @@ class LatentDiffusionModel(LightningModule):
             dtype=torch.int64,
             device=self.device,
         )
-
-        mean, logvar = self.vae.encode(clean_image.unsqueeze(0))
-        z = self.vae.reparameterize(mean, logvar)
-        self.min_factor_fixed[category] = z.min()
-        self.max_factor_fixed[category] = z.max()
+        posterior = self.vae.vae.encode(clean_image.unsqueeze(0)).latent_dist
+        z = posterior.sample()
+        z_flat = z.flatten()
+        self.min_factor_fixed[category] = z_flat.min()
+        self.max_factor_fixed[category] = z_flat.max()
         print(category, " scaler min: ", self.min_factor_fixed[category])
         print(category, " scaler max: ", self.max_factor_fixed[category])
         print(f"----------After Encoding - Image Latent-----------")
-        print('min: ', z.min())
-        print('q25: ', torch.quantile(z, 0.25))
-        print('q50: ', torch.quantile(z, 0.50))
-        print('q75: ', torch.quantile(z, 0.75))
-        print('max: ', z.max())
-        print('std: ', z.std())
-        print('mean: ', z.mean())
-        print('mode: ', z.mode())
+        print('min: ', z_flat.min())
+        print('q25: ', torch.quantile(z_flat, 0.25))
+        print('q50: ', torch.quantile(z_flat, 0.50))
+        print('q75: ', torch.quantile(z_flat, 0.75))
+        print('max: ', z_flat.max())
+        print('std: ', z_flat.std())
+        print('mean: ', z_flat.mean())
         print(" ")
         z = (z - self.min_factor_fixed[category]) / (self.max_factor_fixed[category] - self.min_factor_fixed[category])
-        z = z.view(self.in_channels, self.sample_size, self.sample_size)
         noises = torch.randn(
             z.shape, generator=self.generator, device=self.device
         )
@@ -253,7 +243,7 @@ class LatentDiffusionModel(LightningModule):
         noisy_latents = []
         for idx, t in enumerate(timesteps):
             # create noisy latents
-            noisy_latent = self.noise_scheduler.add_noise(z, noises, t)
+            noisy_latent = self.noise_scheduler.add_noise(z, noises, t).squeeze(0)
             noisy_latents.append(noisy_latent)
 
             # save locally
@@ -293,16 +283,16 @@ class LatentDiffusionModel(LightningModule):
         )
 
     def on_train_batch_start(self, batch: torch.Tensor, batch_idx: int):
-        means, logvars = self.vae.encode(batch)
-        latents = self.vae.reparameterize(means, logvars)
+        posterior = self.vae.vae.encode(batch).latent_dist
+        latents = posterior.sample()
         self.min_factor = latents.flatten().min()
         self.max_factor = latents.flatten().max()
 
     def training_step(self, batch: torch.Tensor, batch_idx: int) -> torch.Tensor:
         bs = batch.shape[0]
-        means, logvars = self.vae.encode(batch)
-        latents = (self.vae.reparameterize(means, logvars) - self.min_factor) / (self.max_factor - self.min_factor)
-        latents = latents.view(bs, self.out_channels, self.sample_size, self.sample_size) 
+        posterior = self.vae.vae.encode(batch).latent_dist
+        latents = posterior.sample()
+        latents = (latents - self.min_factor) / (self.max_factor - self.min_factor)
 
         noises = torch.randn(latents.shape, device=self.device)
         # generates a tensor of random integers (timesteps) ranging from 0 to num_train_timesteps - 1 for each image in the batch
@@ -337,9 +327,9 @@ class LatentDiffusionModel(LightningModule):
     def validation_step(self, batch: torch.Tensor, batch_idx: int) -> torch.Tensor:
         # fixed seed during validation to ensure the noise is always the same
         bs = batch.shape[0]
-        means, logvars = self.vae.encode(batch)
-        latents = (self.vae.reparameterize(means, logvars) - self.min_factor) / (self.max_factor - self.min_factor)
-        latents = latents.view(bs, self.out_channels, self.sample_size, self.sample_size) 
+        posterior = self.vae.vae.encode(batch).latent_dist
+        latents = posterior.sample()
+        latents = (latents - self.min_factor) / (self.max_factor - self.min_factor)
         noises = torch.randn(
             latents.shape, generator=self.generator, device=self.device
         )
@@ -379,7 +369,6 @@ class LatentDiffusionModel(LightningModule):
                 for filename in filenames
             ]
         )
-
         return noisy_images
 
     # Predicts denoised images, and saves them in WandB and locally
@@ -432,9 +421,8 @@ class LatentDiffusionModel(LightningModule):
             print('max: ', latent_flatten.max())
             print('std: ', latent_flatten.std())
             print('mean: ', latent_flatten.mean())
-            print('mode: ', latent_flatten.mode())
             print(" ")
-        denoised_images = self.vae.decode(denoised_latents.flatten(start_dim=1))
+        denoised_images = self.vae.vae.decode(denoised_latents).sample
 
         # Save the denoised images
         self.save_images(

@@ -21,7 +21,8 @@ class OADATDataModule(LightningDataModule):
         indices_swfd: list[int] = np.load(
                 "/mydata/dlbirhoui/chia/oadat-ldm/config/train_sc_BP_indices.npy"
             ),
-        indices_scd: list[int] = np.arange(0, 20000)
+        indices_scd: list[int] = np.arange(0, 20000),
+        return_labels: bool = False
     ) -> None:
         super().__init__()
         self.data_path = data_path
@@ -30,9 +31,13 @@ class OADATDataModule(LightningDataModule):
         self.mix_swfd_scd = mix_swfd_scd
         self.indices_swfd = indices_swfd
         self.indices_scd = indices_scd
+        self.return_labels = return_labels
+        self.swfd_label = 1
+        self.scd_label = 0
         print('train swfd size: ', len(self.indices_swfd))
         print('train scd size: ', len(self.indices_scd))
         print('mix_swfd_scd: ', self.mix_swfd_scd)
+        print('return_labels: ', self.return_labels)
 
 
     def prepare_data(self) -> None:
@@ -40,17 +45,22 @@ class OADATDataModule(LightningDataModule):
         pass
 
     def load_dataset(
-        self, fname_h5: str, key: str, indices: list[int]
+        self, fname_h5: str, key: str, indices: list[int], label
     ) -> dataset.Dataset:
         return dataset.Dataset(
             fname_h5=os.path.join(self.data_path, fname_h5),
             key=key,
             transforms=transforms,
             inds=indices,
+            label=label
         )
 
     def setup(self, stage: str = None) -> None:
         print("setup datamodule...")
+        if self.return_labels == False:
+            self.swfd_label = None
+            self.scd_label = None
+
         if stage == "fit":
             if self.mix_swfd_scd:
                 # Mix SWFD and SCD datasets (80% for training, 20% for validation)
@@ -69,18 +79,20 @@ class OADATDataModule(LightningDataModule):
                 self.train_obj_swfd = self.load_dataset(
                     "SWFD_semicircle_RawBP.h5",
                     "sc_BP",
-                    train_indices_swfd
+                    train_indices_swfd,
+                    self.swfd_label
                 )
                 self.train_obj_scd = self.load_dataset(
-                    "SCD_RawBP.h5", "vc_BP", train_indices_scd
+                    "SCD_RawBP.h5", "vc_BP", train_indices_scd, self.scd_label
                 )
                 self.val_obj_swfd = self.load_dataset(
                     "SWFD_semicircle_RawBP.h5",
                     "sc_BP",
-                    val_indices_swfd
+                    val_indices_swfd,
+                    self.swfd_label
                 )
                 self.val_obj_scd = self.load_dataset(
-                    "SCD_RawBP.h5", "vc_BP", val_indices_scd
+                    "SCD_RawBP.h5", "vc_BP", val_indices_scd, self.scd_label
                 )
 
                 # Combine SWFD and SCD datasets for both training and validation
@@ -101,18 +113,21 @@ class OADATDataModule(LightningDataModule):
                 self.train_obj = self.load_dataset(
                     "SWFD_semicircle_RawBP.h5",
                     "sc_BP",
-                    self.train_indices
+                    self.train_indices,
+                    self.swfd_label
                 )
                 self.val_obj = self.load_dataset(
                     "SWFD_semicircle_RawBP.h5",
                     "sc_BP",
-                    self.val_indices
+                    self.val_indices,
+                    self.swfd_label
                 )
 
         self.scd_obj = self.load_dataset(
             "SCD_RawBP.h5",
             "vc_BP",
-            self.indices_scd[:10]
+            self.indices_scd[:10],
+            self.scd_label
         )
 
     def train_dataloader(self) -> DataLoader:

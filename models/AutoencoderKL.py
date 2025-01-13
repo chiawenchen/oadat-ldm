@@ -10,10 +10,12 @@ import numpy as np
 from PIL import Image
 from torch.optim.lr_scheduler import LinearLR
 from diffusers import AutoencoderKL
+from losses.LPIPSWithDiscriminator import LPIPSWithDiscriminator
 
 class VAE(LightningModule):
     def __init__(self, config):
         super().__init__()
+        self.automatic_optimization = False
 
         down_block_types = tuple("DownEncoderBlock2D" for _ in range(config.num_down_blocks))
         up_block_types = tuple("UpDecoderBlock2D" for _ in range(config.num_up_blocks))
@@ -29,9 +31,12 @@ class VAE(LightningModule):
             down_block_types=down_block_types,
             up_block_types=up_block_types
         )
-        self.kl_loss_weight = config.kl_loss_weight
+        self.loss = LPIPSWithDiscriminator(disc_start=config.disc_start, kl_weight=config.kl_loss_weight, disc_weight=config.disc_weight)
         self.config = config
     
+    def get_last_layer(self):
+        return self.vae.decoder.conv_out.weight
+
     def forward(self, x: torch.Tensor):
         """
         Forward pass for the VAE. Encodes the input into latent space and reconstructs it.
@@ -44,57 +49,80 @@ class VAE(LightningModule):
         """
         Training step for the VAE. Computes the reconstruction loss and KL divergence.
         """
-        images = batch  # Assuming the batch is (images, labels)
-        images = images.to(self.device)
+        opt_ae, opt_disc = self.optimizers()
+        images = batch.to(self.device)
         
         # Encode and decode
-        latents_dist = self.vae.encode(images).latent_dist
-        latents = latents_dist.sample()
-        reconstructed = self.vae.decode(latents).sample
+        posterior = self.vae.encode(images).latent_dist
+        latents = posterior.sample()
+        reconstructions = self.vae.decode(latents).sample
         
-        # Reconstruction loss + KL loss
-        recon_loss = F.mse_loss(reconstructed, images, reduction="mean")
-        kl_loss = latents_dist.kl().mean()
-        loss = recon_loss + self.kl_loss_weight * kl_loss
-        
-        # Log metrics
-        self.log("train_loss", loss, on_step=False, on_epoch=True, prog_bar=True)
-        self.log("train_recon_loss", recon_loss, on_step=False, on_epoch=True)
-        self.log("train_kl_loss", kl_loss, on_step=False, on_epoch=True)
-        
-        return loss
-    
+        if self.global_step % 2 == 0:
+            # train encoder+decoder+logvar
+            self.toggle_optimizer(opt_ae)
+            aeloss, log_dict_ae = self.loss(images, reconstructions, posterior, 0, self.global_step,
+                                            last_layer=self.get_last_layer(), split="train")
+            self.manual_backward(aeloss)
+            opt_ae.step()
+            opt_ae.zero_grad()
+            self.untoggle_optimizer(opt_ae)
+
+
+            self.log("aeloss", aeloss, prog_bar=True, logger=True, on_step=True, on_epoch=True)
+            self.log_dict(log_dict_ae, prog_bar=False, logger=True, on_step=True, on_epoch=False)
+            return aeloss
+
+        if self.global_step % 2 == 1:
+            # train the discriminator
+            self.toggle_optimizer(opt_disc)
+            discloss, log_dict_disc = self.loss(images, reconstructions, posterior, 1, self.global_step,
+                                                last_layer=self.get_last_layer(), split="train")
+
+            self.manual_backward(discloss)
+            opt_disc.step()
+            opt_disc.zero_grad()
+            self.untoggle_optimizer(opt_disc)
+
+            self.log("discloss", discloss, prog_bar=True, logger=True, on_step=True, on_epoch=True)
+            self.log_dict(log_dict_disc, prog_bar=False, logger=True, on_step=True, on_epoch=False)
+            return discloss
+            
     def validation_step(self, batch: torch.Tensor, batch_idx: int):
         """
         Validation step for the VAE. Logs reconstruction and KL divergence losses.
         """
-        images = batch
-        images = images.to(self.device)
+        images = batch.to(self.device)
         
         # Encode and decode
-        latents_dist = self.vae.encode(images).latent_dist
-        latents = latents_dist.sample()
-        reconstructed = self.vae.decode(latents).sample
+        posterior = self.vae.encode(images).latent_dist
+        latents = posterior.sample()
+        reconstructions = self.vae.decode(latents).sample
         
-        # Reconstruction loss + KL loss
-        recon_loss = F.mse_loss(reconstructed, images, reduction="mean")
-        kl_loss = latents_dist.kl().mean()
-        loss = recon_loss + self.kl_loss_weight * kl_loss
-        
-        # Log metrics
-        self.log("val_loss", loss, on_step=False, on_epoch=True, prog_bar=True)
-        self.log("val_recon_loss", recon_loss, on_step=False, on_epoch=True)
-        self.log("val_kl_loss", kl_loss, on_step=False, on_epoch=True)
+        aeloss, log_dict_ae = self.loss(images, reconstructions, posterior, 0, self.global_step,
+                                        last_layer=self.get_last_layer(), split="val")
+
+        discloss, log_dict_disc = self.loss(images, reconstructions, posterior, 1, self.global_step,
+                                            last_layer=self.get_last_layer(), split="val")
+
+        self.log("val/rec_loss", log_dict_ae["val/rec_loss"])
+        self.log_dict(log_dict_ae)
+        self.log_dict(log_dict_disc)
+        return self.log_dict
 
     def configure_optimizers(self):
-        """
-        Optimizer configuration.
-        """
-        optimizer = torch.optim.AdamW(self.parameters(), lr=self.config.learning_rate)
-        lr_scheduler = LinearLR(
-            optimizer, total_iters=self.config.lr_warmup_epochs, last_epoch=-1
-        )
-        return [optimizer], [lr_scheduler]
+        opt_ae = torch.optim.Adam(self.vae.parameters(),
+                                  lr=self.config.learning_rate)
+        opt_disc = torch.optim.Adam(self.loss.discriminator.parameters(),
+                                    lr=self.config.learning_rate)
+
+        # lr_scheduler_ae = LinearLR(
+        #     opt_ae, total_iters=self.config.lr_warmup_epochs, last_epoch=-1
+        # )
+        # lr_scheduler_disc = LinearLR(
+        #     opt_disc, total_iters=self.config.lr_warmup_epochs, last_epoch=-1
+        # )
+
+        return [opt_ae, opt_disc], []
 
     def plot(self, originals, reconstructions, n_images=10):
         """

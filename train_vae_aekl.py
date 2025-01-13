@@ -23,6 +23,7 @@ from datamodule import OADATDataModule
 
 # from models.VAE import VAE
 from models.AutoencoderKL import VAE
+from models.AutoencoderKL_condition import VAE as condition_VAE
 
 torch.set_float32_matmul_precision("medium")
 
@@ -44,7 +45,10 @@ def main():
     config.sample_dir = sample_dir
 
     # vae model
-    model = VAE(config=config)
+    if args.condition_vae:
+        model = condition_VAE(config=config)
+    else:
+        model = VAE(config=config)
 
     # DataModule
     indices_scd = np.load("/mydata/dlbirhoui/chia/oadat-ldm/config/scd_500px_blob_train_indices.npy")
@@ -55,7 +59,8 @@ def main():
         num_workers=args.num_workers,
         mix_swfd_scd=args.mix_swfd_scd,
         indices_swfd=indices_swfd,
-        indices_scd=indices_scd
+        indices_scd=indices_scd,
+        return_labels=args.condition_vae
     )
 
     # Set up checkpoint callback
@@ -65,11 +70,11 @@ def main():
     checkpoint_callback = ModelCheckpoint(
         dirpath=ckpt_dir,
         save_top_k=3,
-        monitor="val_loss",
+        monitor="val/total_loss",
         mode="min",
         save_weights_only=False,
         save_last=True,
-        filename="{epoch:02d}-{val_loss:.4f}",
+        filename="{epoch:02d}-{val_total_loss:.4f}",
     )
 
     # Set up logger

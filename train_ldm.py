@@ -6,8 +6,11 @@ from lightning.pytorch.callbacks import ModelCheckpoint, ModelSummary
 from lightning.pytorch.loggers import WandbLogger
 from datamodule import OADATDataModule
 from config.config import LDMTrainingConfig, parse_arguments
-from models.LDM import LatentDiffusionModel
-from models.VAE import VAE
+from models.LDM_vae_condition import LatentDiffusionModel
+from models.LDM_condition import ConditionalLatentDiffusionModel
+
+# from models.VAE import VAE
+from models.AutoencoderKL_condition_2 import VAE
 from utils import get_last_checkpoint, get_named_beta_schedule
 
 
@@ -25,8 +28,14 @@ def main() -> None:
         batch_size=args.batch_size,
     )
 
+
+    if args.condition_ldm or args.condition_vae:
+        return_labels = True
+    else:
+        return_labels = False
+
     # Set up data module
-    # indices_scd = np.load("/mydata/dlbirhoui/chia/oadat-ldm/config/scd_500px_blob_train_indices.npy")
+    indices_scd = np.load("/mydata/dlbirhoui/chia/oadat-ldm/config/scd_500px_blob_train_indices.npy")
     indices_swfd = np.load("/mydata/dlbirhoui/chia/oadat-ldm/config/train_sc_BP_indices.npy")
     datamodule = OADATDataModule(
         data_path=args.oadat_dir,
@@ -34,6 +43,8 @@ def main() -> None:
         num_workers=args.num_workers,
         mix_swfd_scd=args.mix_swfd_scd,
         indices_swfd=indices_swfd,
+        indices_scd=indices_scd,
+        return_labels=return_labels
     )
 
     # Set up noise scheduler
@@ -45,8 +56,11 @@ def main() -> None:
     config.sample_dir = sample_dir
 
     # Initialize the model
-    vae = VAE.load_from_checkpoint(config.vae_ckpt_dir)
-    model = LatentDiffusionModel(config=config, noise_scheduler=noise_scheduler, vae=vae)
+    vae = VAE.load_from_checkpoint(config.vae_ckpt_dir, config=config)
+    if args.condition_ldm == True:        
+        model = ConditionalLatentDiffusionModel(config=config, noise_scheduler=noise_scheduler, vae=vae)
+    else:
+        model = LatentDiffusionModel(config=config, noise_scheduler=noise_scheduler, vae=vae)
 
     # Set up logger
     logger = WandbLogger(

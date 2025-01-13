@@ -60,22 +60,27 @@ class LDMTrainingConfig:
     # default hyperparameters
     image_size: int = 256
     latent_channels: int = 3
-    latent_size: int = 8
+    latent_size: int = 32
     num_down_blocks: int = 4
     num_up_blocks: int = 4
+    num_classes: int = 2
     block_out_channels: list = field(default_factory=lambda: [64, 64, 128, 256])
     kl_loss_weight: float = 1.0e-06
+    disc_start: int = 5551
+    disc_weight: float = 0.5
     batch_size: int = 128
     num_epochs: int = 250
     learning_rate: float = 1e-4
     lr_warmup_epochs: int = 5
-    save_image_epochs: int = 5
+    save_image_epochs: int = 1
     seed: int = 42
     num_train_timesteps: int = 1000
     sample_dir: str = None
     sample_num: int = 11
     output_dir: str = "/mydata/dlbirhoui/chia/"  # directory to save models and images
-    vae_ckpt_dir: str = "/mydata/dlbirhoui/chia/checkpoints/vae/vae/epoch=244-val_loss=0.0025.ckpt"
+    vae_ckpt_dir: str = "/mydata/dlbirhoui/chia/checkpoints/vae/aekl_lpips_disc_clf_adapt_small_weight_0.5_epoch=130_train_total_loss=14223.ckpt"
+    adv_weight: float = 10e9
+
 # @dataclass
 # class VQVAETrainingConfig:
 #     # Existing parameters
@@ -123,6 +128,16 @@ def parse_arguments() -> argparse.Namespace:
         "--mix_swfd_scd",
         action="store_true",
         help="Mix SWFD and SCD datasets (set to True if specified, False otherwise)",
+    )
+    parser.add_argument(
+        "--condition_ldm",
+        action="store_true",
+        help="Condition Latent Diffusion Model on class labels (set to True if specified, False otherwise)",
+    )
+    parser.add_argument(
+        "--condition_vae",
+        action="store_true",
+        help="Condition VAE on class labels (set to True if specified, False otherwise)",
     )
     parser.add_argument(
         "--noise_schedule", default="linear", type=str,
