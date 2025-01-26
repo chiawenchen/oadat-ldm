@@ -58,7 +58,7 @@ class VAE(LightningModule):
         reconstructions = self.vae.decode(latents).sample
         
         if self.global_step % 2 == 0:
-            # train encoder+decoder+logvar
+            # train encoder+decoder
             self.toggle_optimizer(opt_ae)
             aeloss, log_dict_ae = self.loss(images, reconstructions, posterior, 0, self.global_step,
                                             last_layer=self.get_last_layer(), split="train")

@@ -78,8 +78,9 @@ class LDMTrainingConfig:
     sample_dir: str = None
     sample_num: int = 11
     output_dir: str = "/mydata/dlbirhoui/chia/"  # directory to save models and images
-    vae_ckpt_dir: str = "/mydata/dlbirhoui/chia/checkpoints/vae/aekl_lpips_disc_clf_adapt_small_weight_0.5_epoch=130_train_total_loss=14223.ckpt"
-    adv_weight: float = 10e9
+    vae_ckpt_dir: str = "/mydata/dlbirhoui/chia/checkpoints/vae/aekl_lpips_disc_clf_adapt_smaller_weight_0.5/last.ckpt"
+    cvae_ckpt_dir: str = "/mydata/dlbirhoui/chia/checkpoints/vae/aekl_lpips_disc_clf_cvae/last.ckpt"
+    adv_weight: float = 5000
 
 # @dataclass
 # class VQVAETrainingConfig:

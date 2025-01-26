@@ -6,11 +6,11 @@ from lightning.pytorch.callbacks import ModelCheckpoint, ModelSummary
 from lightning.pytorch.loggers import WandbLogger
 from datamodule import OADATDataModule
 from config.config import LDMTrainingConfig, parse_arguments
-from models.LDM import LatentDiffusionModel
+from models.LDM_vae_condition import LatentDiffusionModel
 from models.LDM_condition import ConditionalLatentDiffusionModel
 
 # from models.VAE import VAE
-from models.AutoencoderKL_condition_2 import VAE # adaptive weight 5000
+from models.ConditionalAutoencoderKL import VAE # adaptive weight 5000
 from utils import get_last_checkpoint, get_named_beta_schedule
 
 
@@ -56,7 +56,7 @@ def main() -> None:
     config.sample_dir = sample_dir
 
     # Initialize the model
-    vae = VAE.load_from_checkpoint(config.vae_ckpt_dir, config=config)
+    vae = VAE.load_from_checkpoint(config.cvae_ckpt_dir, config=config)
     if args.condition_ldm == True:        
         model = ConditionalLatentDiffusionModel(config=config, noise_scheduler=noise_scheduler, vae=vae)
     else:

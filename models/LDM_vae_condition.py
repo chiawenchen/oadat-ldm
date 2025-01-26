@@ -149,49 +149,17 @@ class LatentDiffusionModel(LightningModule):
         plt.close()
         self.logger.experiment.log({wandb_name: [wandb.Image(local_path, caption=f"Epoch {self.current_epoch}")]})
 
-    # Function to generate fixed noisy images before training
-    def generate_fixed_noisy_images_for_variety_check(
-        self,
-        category: str,
-        same_X0: bool = False,
-        same_noise: bool = False,
-        num_sampling: int = 5,
-    ) -> None:        
-        noises = torch.randn(
-            (num_sampling, self.in_channels, self.sample_size, self.sample_size), generator=self.generator, device=self.device
-        )
-
-        for idx in range(len(noises)):
-            fixed_image_dir = f"{self.config.sample_dir}/{category}_fixed_noisy_images"
-            os.makedirs(fixed_image_dir, exist_ok=True)
-            noisy_image_path = os.path.join(
-                fixed_image_dir,
-                f"{category}_noisy_image_{idx}.pt",
-            )
-            torch.save(noises[idx], noisy_image_path)
-
-        # # combine noisy images and push to wandb
-        # self.save_images(
-        #     noises,
-        #     timesteps=torch.full((noises.size(0),), 999, dtype=torch.int64, device=self.device),
-        #     local_path=os.path.join(self.config.sample_dir, f"{category}_noisy.png"),
-        #     wandb_name=f"{category}_noisy",
-        # )
-
     def generate_fixed_noisy_images(self, category: str) -> None:
         local_path = os.path.join(self.config.sample_dir, f"{category}_noisy.png")
         # if os.path.exists(local_path):
         #     return
         if category == "swfd":
-            clean_images = next(iter(self.trainer.datamodule.val_dataloader())).to(
-                self.device
-            )
+            clean_images, labels = next(iter(self.trainer.datamodule.val_dataloader()))
         else:
-            clean_images = next(iter(self.trainer.datamodule.scd_dataloader())).to(
-                self.device
-            )
+            clean_images, labels = next(iter(self.trainer.datamodule.scd_dataloader()))
 
-        clean_image = clean_images[0]
+        clean_image = clean_images[0].to(self.device)
+        label = labels[0].to(self.device)
         # save clean image
         self.save_clean_image(
             clean_image,
@@ -199,7 +167,7 @@ class LatentDiffusionModel(LightningModule):
             wandb_name=f"{category}_clean",
         )
 
-        reconstructed, _ = self.vae.forward(clean_image.unsqueeze(0))
+        reconstructed, _, _ = self.vae.forward(clean_image.unsqueeze(0), label.unsqueeze(0))
 
         # save clean image
         self.save_clean_image(
@@ -278,19 +246,18 @@ class LatentDiffusionModel(LightningModule):
         self.generator.manual_seed(self.config.seed)
         self.generate_fixed_noisy_images("swfd")
         self.generate_fixed_noisy_images("scd")
-        self.generate_fixed_noisy_images_for_variety_check(
-            "prepicked_noise", False, True
-        )
 
     def on_train_batch_start(self, batch: torch.Tensor, batch_idx: int):
-        posterior = self.vae.vae.encode(batch).latent_dist
+        images, labels = batch
+        posterior = self.vae.vae.encode(images).latent_dist
         latents = posterior.sample()
         self.min_factor = latents.flatten().min()
         self.max_factor = latents.flatten().max()
 
     def training_step(self, batch: torch.Tensor, batch_idx: int) -> torch.Tensor:
-        bs = batch.shape[0]
-        posterior = self.vae.vae.encode(batch).latent_dist
+        images, labels = batch
+        bs = images.shape[0]
+        posterior = self.vae.vae.encode(images).latent_dist
         latents = posterior.sample()
         latents = (latents - self.min_factor) / (self.max_factor - self.min_factor)
 
@@ -326,8 +293,9 @@ class LatentDiffusionModel(LightningModule):
 
     def validation_step(self, batch: torch.Tensor, batch_idx: int) -> torch.Tensor:
         # fixed seed during validation to ensure the noise is always the same
-        bs = batch.shape[0]
-        posterior = self.vae.vae.encode(batch).latent_dist
+        images, labels = batch
+        bs = images.shape[0]
+        posterior = self.vae.vae.encode(images).latent_dist
         latents = posterior.sample()
         latents = (latents - self.min_factor) / (self.max_factor - self.min_factor)
         noises = torch.randn(
@@ -405,6 +373,12 @@ class LatentDiffusionModel(LightningModule):
                 # Update denoised images
                 denoised_latents[active_mask] = torch.stack(step_result)
 
+        # scale denoised_latents to [0, 1] again for decoding stability
+        batch_min = denoised_latents.view(denoised_latents.size(0), -1).min(dim=1, keepdim=True)[0].view(-1, 1, 1, 1)
+        batch_max = denoised_latents.view(denoised_latents.size(0), -1).max(dim=1, keepdim=True)[0].view(-1, 1, 1, 1)
+        epsilon = 1e-8
+        denoised_latents = (denoised_latents - batch_min) / (batch_max - batch_min + epsilon)
+
         denoised_latents = denoised_latents * ((self.max_factor_fixed[category] - self.min_factor_fixed[category])) + self.min_factor_fixed[category]
  
         # decode from latent space to image space
@@ -422,7 +396,19 @@ class LatentDiffusionModel(LightningModule):
             print('std: ', latent_flatten.std())
             print('mean: ', latent_flatten.mean())
             print(" ")
-        denoised_images = self.vae.vae.decode(denoised_latents).sample
+
+        if category == 'swfd':
+            labels = torch.tensor(1, dtype=torch.int64, device=self.device).repeat(denoised_latents.size(0))
+        else:
+            labels = torch.tensor(0, dtype=torch.int64, device=self.device).repeat(denoised_latents.size(0))
+
+        labels = labels.float().unsqueeze(-1)
+        projected_labels = self.vae.label_projection(labels)
+        projected_labels = projected_labels.unsqueeze(-1).unsqueeze(-1)  # Add spatial dimensions
+        projected_labels = projected_labels.expand(-1, -1, denoised_latents.size(2), denoised_latents.size(3))
+
+        conditioned_latents = denoised_latents + projected_labels
+        denoised_images = self.vae.vae.decode(conditioned_latents).sample
 
         # Save the denoised images
         self.save_images(
@@ -439,7 +425,6 @@ class LatentDiffusionModel(LightningModule):
             self.current_epoch == 0
             or self.current_epoch % self.config.save_image_epochs == 0
             or self.current_epoch == self.config.num_epochs - 1
-            # self.current_epoch % 1 == 0
         ):
             # Define the linearly spaced timesteps
             fixed_timesteps = torch.tensor(
@@ -465,15 +450,4 @@ class LatentDiffusionModel(LightningModule):
                 "scd", scd_noisy_images, fixed_timesteps, self.current_epoch
             )            
             print('scd success.')
-
-
-            # 3. samples from different noise, same X_0
-            noisy_images = self.get_fixed_noisy_images("prepicked_noise")
-            fixed_timesteps = torch.full(
-                (noisy_images.size(0),), 999, dtype=torch.int64, device=self.device
-            )
-            self.denoise_and_save_samples(
-                "prepicked_noise", noisy_images, fixed_timesteps, self.current_epoch
-            )
-            print('prepicked_noise success.')
 
