@@ -6,7 +6,7 @@ from lightning.pytorch.callbacks import ModelCheckpoint, ModelSummary
 from lightning.pytorch.loggers import WandbLogger
 from datamodule import OADATDataModule
 from config.config import LDMTrainingConfig, parse_arguments
-from models.LDM import LatentDiffusionModel
+from models.LDM_0_scale_individual_minus1to1 import LatentDiffusionModel
 from models.LDM_condition import ConditionalLatentDiffusionModel
 
 # from models.VAE import VAE

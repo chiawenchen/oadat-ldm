@@ -89,12 +89,12 @@ class LPIPSWithDiscriminator(nn.Module):
 
             loss = weighted_nll_loss + self.kl_weight * kl_loss + d_weight * disc_factor * g_loss
 
-            log = {"{}/ae_loss".format(split): loss.clone().detach().mean(), "{}/logvar".format(split): self.logvar.detach(),
+            log = {"{}/ae_loss".format(split): loss.clone().detach().mean(), #"{}/logvar".format(split): self.logvar.detach(),
                    "{}/kl_loss".format(split): kl_loss.detach().mean(), "{}/nll_loss".format(split): nll_loss.detach().mean(),
                    "{}/rec_loss".format(split): rec_loss.detach().mean(),
-                   "{}/d_weight".format(split): d_weight.detach(),
-                   "{}/disc_factor".format(split): torch.tensor(disc_factor),
-                   "{}/g_loss".format(split): g_loss.detach().mean(),
+                #    "{}/d_weight".format(split): d_weight.detach(),
+                #    "{}/disc_factor".format(split): torch.tensor(disc_factor),
+                #    "{}/g_loss".format(split): g_loss.detach().mean(),
                    }
             return loss, log
 
@@ -112,7 +112,7 @@ class LPIPSWithDiscriminator(nn.Module):
 
             log = {
                 "{}/disc_loss".format(split): d_loss.clone().detach().mean(),
-                "{}/logits_real".format(split): logits_real.detach().mean(),
-                "{}/logits_fake".format(split): logits_fake.detach().mean()
+                # "{}/logits_real".format(split): logits_real.detach().mean(),
+                # "{}/logits_fake".format(split): logits_fake.detach().mean()
                 }
             return d_loss, log

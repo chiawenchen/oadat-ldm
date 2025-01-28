@@ -16,14 +16,14 @@ from torchvision import models
 from torchvision.transforms import v2
 
 from diffusers import DDIMScheduler
-from config.config import LDMTrainingConfig, parse_arguments
+from config.config6 import LDMTrainingConfig, parse_arguments
 from utils import get_last_checkpoint, get_named_beta_schedule
 import dataset
 from datamodule import OADATDataModule
 
 # from models.VAE import VAE
 from models.AutoencoderKL import VAE
-from models.AutoencoderKL_condition import VAE as condition_VAE
+from models.AutoencoderKL_clf2_sigmoid_adaptive_clf_new import VAE as condition_VAE
 
 torch.set_float32_matmul_precision("medium")
 

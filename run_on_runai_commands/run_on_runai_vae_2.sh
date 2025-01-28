@@ -1,2 +1,2 @@
 # python train_vae_aekl.py --oadat_dir /mydata/dlbirhoui/firat/OADAT --num_epochs 250 --gpus 1 --batch_size 100 --num_workers 4 --job_name aekl_lpips_disc_late_start --mix_swfd_scd
-python train_vae_aekl_2.py --oadat_dir /mydata/dlbirhoui/firat/OADAT --num_epochs 250 --gpus 1 --batch_size 64 --num_workers 4 --job_name aekl_lpips_disc_clf_adapt_smaller_weight_0.5 --mix_swfd_scd --condition_vae
+python train_vae_aekl_sigmoid.py --oadat_dir /mydata/dlbirhoui/firat/OADAT --num_epochs 250 --gpus 1 --batch_size 64 --num_workers 4 --job_name aekl_after_sigmoid --mix_swfd_scd --condition_vae

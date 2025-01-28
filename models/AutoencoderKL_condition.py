@@ -11,7 +11,7 @@ from PIL import Image
 from torch.optim.lr_scheduler import LinearLR
 from diffusers import AutoencoderKL
 from losses.LPIPSWithDiscriminator import LPIPSWithDiscriminator
-from models.PretrainedResnetClassifier import Classifier
+from models.LatentDomainClassifier import Classifier
 
 class VAE(LightningModule):
     def __init__(self, config):

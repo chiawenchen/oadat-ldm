@@ -5,12 +5,12 @@ from lightning.pytorch import Trainer
 from lightning.pytorch.callbacks import ModelCheckpoint, ModelSummary
 from lightning.pytorch.loggers import WandbLogger
 from datamodule import OADATDataModule
-from config.config import LDMTrainingConfig, parse_arguments
-from models.LDM import LatentDiffusionModel
+from config.config5 import LDMTrainingConfig, parse_arguments
+from models.LDM_5_scale_sigmoid_minus1to1 import LatentDiffusionModel
 from models.LDM_condition import ConditionalLatentDiffusionModel
 
 # from models.VAE import VAE
-from models.AutoencoderKL_clf2 import VAE # adaptive weight 5000
+from models.AutoencoderKL_clf2_sigmoid import VAE
 from utils import get_last_checkpoint, get_named_beta_schedule
 
 

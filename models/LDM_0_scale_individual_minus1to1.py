@@ -38,7 +38,7 @@ class LatentDiffusionModel(LightningModule):
             in_channels=self.in_channels,
             out_channels=self.out_channels,
             layers_per_block=2,
-            center_input_sample=True,
+            center_input_sample=False,
             block_out_channels=(
                 64,
                 128,
@@ -203,6 +203,8 @@ class LatentDiffusionModel(LightningModule):
         print(" ")
         
         z = (z - self.min_factor_fixed[category]) / (self.max_factor_fixed[category] - self.min_factor_fixed[category])
+        # scale to -1 to 1
+        z = z * 2.0 - 1.0
         noises = torch.randn(
             z.shape, generator=self.generator, device=self.device
         )
@@ -246,18 +248,15 @@ class LatentDiffusionModel(LightningModule):
         self.generate_fixed_noisy_images("swfd")
         self.generate_fixed_noisy_images("scd")
 
-    def on_train_batch_start(self, batch: torch.Tensor, batch_idx: int):
-        posterior = self.vae.vae.encode(batch).latent_dist
-        latents = posterior.sample()
-        self.min_factor = latents.flatten().min()
-        self.max_factor = latents.flatten().max()
-
     def training_step(self, batch: torch.Tensor, batch_idx: int) -> torch.Tensor:
         bs = batch.shape[0]
         posterior = self.vae.vae.encode(batch).latent_dist
         latents = posterior.sample()
-        latents = (latents - self.min_factor) / (self.max_factor - self.min_factor)
-
+        batch_min = latents.view(latents.size(0), -1).min(dim=1, keepdim=True)[0].view(-1, 1, 1, 1)
+        batch_max = latents.view(latents.size(0), -1).max(dim=1, keepdim=True)[0].view(-1, 1, 1, 1)
+        epsilon = 1e-8
+        latents = (latents - batch_min) / (batch_max - batch_min + epsilon)
+        latents = latents * 2.0 - 1.0
         noises = torch.randn(latents.shape, device=self.device)
         # generates a tensor of random integers (timesteps) ranging from 0 to num_train_timesteps - 1 for each image in the batch
         timesteps = torch.randint(
@@ -293,7 +292,11 @@ class LatentDiffusionModel(LightningModule):
         bs = batch.shape[0]
         posterior = self.vae.vae.encode(batch).latent_dist
         latents = posterior.sample()
-        latents = (latents - self.min_factor) / (self.max_factor - self.min_factor)
+        batch_min = latents.view(latents.size(0), -1).min(dim=1, keepdim=True)[0].view(-1, 1, 1, 1)
+        batch_max = latents.view(latents.size(0), -1).max(dim=1, keepdim=True)[0].view(-1, 1, 1, 1)
+        epsilon = 1e-8
+        latents = (latents - batch_min) / (batch_max - batch_min + epsilon)
+        latents = latents * 2.0 - 1.0
         noises = torch.randn(
             latents.shape, generator=self.generator, device=self.device
         )
@@ -374,7 +377,7 @@ class LatentDiffusionModel(LightningModule):
         # batch_max = denoised_latents.view(denoised_latents.size(0), -1).max(dim=1, keepdim=True)[0].view(-1, 1, 1, 1)
         # epsilon = 1e-8
         # denoised_latents = (denoised_latents - batch_min) / (batch_max - batch_min + epsilon)
-
+        denoised_latents = (denoised_latents + 1.0) / 2.0
         denoised_latents = denoised_latents * ((self.max_factor_fixed[category] - self.min_factor_fixed[category])) + self.min_factor_fixed[category]
  
         # decode from latent space to image space

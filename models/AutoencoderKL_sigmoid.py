@@ -11,7 +11,7 @@ from PIL import Image
 from torch.optim.lr_scheduler import LinearLR
 from diffusers import AutoencoderKL
 from losses.LPIPSWithDiscriminator import LPIPSWithDiscriminator
-from models.LatentDomainClassifier import SimpleMLP as Classifier
+from models.LatentDomainClassifier import SimpleClassifier as Classifier
 
 class VAE(LightningModule):
     def __init__(self, config):
@@ -35,8 +35,7 @@ class VAE(LightningModule):
         self.loss = LPIPSWithDiscriminator(disc_start=config.disc_start, kl_weight=config.kl_loss_weight, disc_weight=config.disc_weight)
         
         # Classifier for adversarial training
-        latent_dim = config.latent_channels * config.latent_size * config.latent_size
-        self.classifier = Classifier(latent_dim=latent_dim, num_classes=2)
+        self.classifier = Classifier(latent_channels=config.latent_channels)
         self.classifier_loss_fn = nn.CrossEntropyLoss()
         
         self.config = config
@@ -46,6 +45,17 @@ class VAE(LightningModule):
 
     def get_last_layer_encoder(self):
         return self.vae.encoder.conv_out.weight
+
+    def log_latent_statistics(self, z: torch.Tensor):
+        z_flat = z.flatten()
+        print("global step: ", self.global_step)
+        print('min: ', z_flat.min().item())
+        print('q25: ', torch.quantile(z_flat, 0.25).item())
+        print('q50: ', torch.quantile(z_flat, 0.50).item())
+        print('q75: ', torch.quantile(z_flat, 0.75).item())
+        print('max: ', z_flat.max().item())
+        print('- std: ', z_flat.std().item())
+        print('- mean: ', z_flat.mean().item())
 
     def calculate_classifier_weight(self, reconstruction_loss, classifier_loss):
         """
@@ -73,6 +83,7 @@ class VAE(LightningModule):
         Forward pass for the VAE. Encodes the input into latent space and reconstructs it.
         """
         latents = self.vae.encode(x).latent_dist.sample()
+        latents = torch.sigmoid(latents)
         reconstructed = self.vae.decode(latents).sample
         return reconstructed, latents
     
@@ -87,26 +98,35 @@ class VAE(LightningModule):
         
         # Encode and decode
         posterior = self.vae.encode(images).latent_dist
-        latents = posterior.sample()
+        latents_sample = posterior.sample()
+        latents = torch.sigmoid(latents_sample)
         reconstructions = self.vae.decode(latents).sample
-        latents_flat = latents.view(latents.size(0), -1)
+
+        # print latent's statistics
+        if self.global_step % 100 == 0:
+            print("---- before sigmoid ----")
+            self.log_latent_statistics(latents_sample)
+            print("---- after sigmoid ----")
+            self.log_latent_statistics(latents)
 
         # Phase 1: Update Autoencoder (reconstruction + adversarial)
-        if self.global_step % 3 == 0:
+        if self.global_step % 2 == 0:
             self.toggle_optimizer(opt_ae)
 
             # Compute loss including LPIPS
             aeloss, log_dict_ae = self.loss(images, reconstructions, posterior, 0, self.global_step,
                                             last_layer=self.get_last_layer(), split="train")
 
-            # Compute adversarial loss (no detach): allow gradients to flow to encoder
-            logits_adv = self.classifier(latents_flat)
+            adaptive_weight, adversarial_loss = 0, 0
+            if self.current_epoch >= 10:
+                # Compute adversarial loss (no detach): allow gradients to flow to encoder
+                logits_adv = self.classifier(latents_sample)
 
-            # Minimize negative classifier loss:  Negative because encoder tries to fool
-            adversarial_loss = -self.classifier_loss_fn(logits_adv, labels)
+                # Minimize negative classifier loss:  Negative because encoder tries to fool
+                adversarial_loss = -self.classifier_loss_fn(logits_adv, labels)
 
-            # Compute adaptive classifier weight
-            adaptive_weight = self.calculate_classifier_weight(aeloss, adversarial_loss)
+                # Compute adaptive classifier weight
+                adaptive_weight = self.calculate_classifier_weight(aeloss, adversarial_loss)
 
             # Combine losses
             total_loss = aeloss + adaptive_weight * adversarial_loss
@@ -127,7 +147,7 @@ class VAE(LightningModule):
             return total_loss
 
         # Phase 2: Update Discriminator
-        elif self.global_step % 3 == 1:
+        elif self.global_step % 2 == 1:
             self.toggle_optimizer(opt_disc)
             discloss, log_dict_disc = self.loss(
                 images, reconstructions, posterior, 1, self.global_step,
@@ -143,10 +163,10 @@ class VAE(LightningModule):
             return discloss
 
         # Phase 3: Update Classifier
-        else:
+        elif self.global_step % 2 == 0 and self.current_epoch >= 10:
             self.toggle_optimizer(opt_cls)
              # Detach latents for classifier training
-            logits_cls = self.classifier(latents_flat.detach())  # Detach here
+            logits_cls = self.classifier(latents_sample.detach())  # Detach here
             classifier_loss = self.classifier_loss_fn(logits_cls, labels)
 
             self.manual_backward(classifier_loss)
@@ -162,7 +182,8 @@ class VAE(LightningModule):
 
         # Encode and decode
         posterior = self.vae.encode(images).latent_dist
-        latents = posterior.sample()
+        latents_sample = posterior.sample()
+        latents = torch.sigmoid(latents_sample)
         reconstructions = self.vae.decode(latents).sample
 
         # Compute LPIPS loss
@@ -177,8 +198,7 @@ class VAE(LightningModule):
             last_layer=self.get_last_layer(), split="val")
 
         # Compute classifier loss
-        latents_flat = latents.view(latents.size(0), -1) 
-        logits = self.classifier(latents_flat)
+        logits = self.classifier(latents_sample)
         classifier_loss = self.classifier_loss_fn(logits, labels)
 
         # Combine for total validation loss
@@ -221,7 +241,7 @@ class VAE(LightningModule):
             # Original images
             ax = axes[0, i]
             img = originals[i].squeeze(0).cpu().numpy()  # Convert to NumPy for plotting
-            im = ax.imshow(img, cmap='gray')
+            im = ax.imshow(img, cmap='gray', vmin=-1.0, vmax=1.0)
             ax.axis('off')
             ax.set_title("Originals", fontsize=10)
             cbar = plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
@@ -230,7 +250,7 @@ class VAE(LightningModule):
             # Reconstructed images
             ax = axes[1, i]
             img = reconstructions[i].squeeze(0).cpu().numpy()  # Convert to NumPy for plotting
-            im = ax.imshow(img, cmap='gray')
+            im = ax.imshow(img, cmap='gray', vmin=-1.0, vmax=1.0)
             ax.axis('off')
             ax.set_title("Reconstructed", fontsize=10)          
             cbar = plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)

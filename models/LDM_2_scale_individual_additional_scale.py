@@ -246,17 +246,14 @@ class LatentDiffusionModel(LightningModule):
         self.generate_fixed_noisy_images("swfd")
         self.generate_fixed_noisy_images("scd")
 
-    def on_train_batch_start(self, batch: torch.Tensor, batch_idx: int):
-        posterior = self.vae.vae.encode(batch).latent_dist
-        latents = posterior.sample()
-        self.min_factor = latents.flatten().min()
-        self.max_factor = latents.flatten().max()
-
     def training_step(self, batch: torch.Tensor, batch_idx: int) -> torch.Tensor:
         bs = batch.shape[0]
         posterior = self.vae.vae.encode(batch).latent_dist
         latents = posterior.sample()
-        latents = (latents - self.min_factor) / (self.max_factor - self.min_factor)
+        batch_min = latents.view(latents.size(0), -1).min(dim=1, keepdim=True)[0].view(-1, 1, 1, 1)
+        batch_max = latents.view(latents.size(0), -1).max(dim=1, keepdim=True)[0].view(-1, 1, 1, 1)
+        epsilon = 1e-8
+        latents = (latents - batch_min) / (batch_max - batch_min + epsilon)
 
         noises = torch.randn(latents.shape, device=self.device)
         # generates a tensor of random integers (timesteps) ranging from 0 to num_train_timesteps - 1 for each image in the batch
@@ -293,7 +290,10 @@ class LatentDiffusionModel(LightningModule):
         bs = batch.shape[0]
         posterior = self.vae.vae.encode(batch).latent_dist
         latents = posterior.sample()
-        latents = (latents - self.min_factor) / (self.max_factor - self.min_factor)
+        batch_min = latents.view(latents.size(0), -1).min(dim=1, keepdim=True)[0].view(-1, 1, 1, 1)
+        batch_max = latents.view(latents.size(0), -1).max(dim=1, keepdim=True)[0].view(-1, 1, 1, 1)
+        epsilon = 1e-8
+        latents = (latents - batch_min) / (batch_max - batch_min + epsilon)
         noises = torch.randn(
             latents.shape, generator=self.generator, device=self.device
         )
@@ -369,11 +369,11 @@ class LatentDiffusionModel(LightningModule):
                 # Update denoised images
                 denoised_latents[active_mask] = torch.stack(step_result)
 
-        # # scale denoised_latents to [0, 1] again for decoding stability
-        # batch_min = denoised_latents.view(denoised_latents.size(0), -1).min(dim=1, keepdim=True)[0].view(-1, 1, 1, 1)
-        # batch_max = denoised_latents.view(denoised_latents.size(0), -1).max(dim=1, keepdim=True)[0].view(-1, 1, 1, 1)
-        # epsilon = 1e-8
-        # denoised_latents = (denoised_latents - batch_min) / (batch_max - batch_min + epsilon)
+        # scale denoised_latents to [0, 1] again for decoding stability
+        batch_min = denoised_latents.view(denoised_latents.size(0), -1).min(dim=1, keepdim=True)[0].view(-1, 1, 1, 1)
+        batch_max = denoised_latents.view(denoised_latents.size(0), -1).max(dim=1, keepdim=True)[0].view(-1, 1, 1, 1)
+        epsilon = 1e-8
+        denoised_latents = (denoised_latents - batch_min) / (batch_max - batch_min + epsilon)
 
         denoised_latents = denoised_latents * ((self.max_factor_fixed[category] - self.min_factor_fixed[category])) + self.min_factor_fixed[category]
  

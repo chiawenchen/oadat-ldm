@@ -81,7 +81,7 @@ class LDMTrainingConfig:
     vae_ckpt_dir: str = "/mydata/dlbirhoui/chia/checkpoints/vae/aekl_clf2/epoch=149-val_total_loss=0.0000.ckpt"
     cvae_ckpt_dir: str = "/mydata/dlbirhoui/chia/checkpoints/vae/aekl_lpips_disc_clf_cvae/last.ckpt"
     adv_weight: float = 5000
-    classifier_weight: float = 5000.0
+    classifier_weight: float = 15000.0
     classifier_scale: float = -1.0
 
 # @dataclass
