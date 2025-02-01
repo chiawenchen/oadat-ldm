@@ -5,10 +5,11 @@ import matplotlib.pyplot as plt
 import umap
 from tqdm import tqdm
 import dataset
-from config.config2 import LDMTrainingConfig
+from config.config import LDMTrainingConfig
 # from models.AutoencoderKL_clf2_tanh import VAE
 # from models.AutoencoderKL_clf2 import VAE
-from models.AutoencoderKL_clf2_sigmoid import VAE
+# from models.AutoencoderKL_clf2_sigmoid import VAE
+from models.AutoencoderKL_clf2_sigmoid_adaptive_clf_new import VAE
 # from models.AutoencoderKL import VAE
 # from models.AutoencoderKL_condition_2 import VAE
 # from models.AutoencoderKL_sigmoid import VAE
@@ -72,7 +73,10 @@ if __name__ == "__main__":
     # vae_checkpoint_path = "/mydata/dlbirhoui/chia/checkpoints/vae/aekl_clf2_tanh/last.ckpt"
     # vae_checkpoint_path = "/mydata/dlbirhoui/chia/checkpoints/vae/aekl_clf2/epoch=149-val_total_loss=0.0000.ckpt"
     # vae_checkpoint_path = "/mydata/dlbirhoui/chia/checkpoints/vae/aekl_clf2_sigmoid/last.ckpt"
-    vae_checkpoint_path = "/mydata/dlbirhoui/chia/checkpoints/vae/aekl_clf2_sigmoid_5000_fixed_lamda/last.ckpt"
+    # vae_checkpoint_path = "/mydata/dlbirhoui/chia/checkpoints/vae/aekl_clf2_sigmoid_5000_fixed_lamda_dup/last.ckpt"
+    # vae_checkpoint_path = "/mydata/dlbirhoui/chia/checkpoints/vae/aekl_clf2_sigmoid_10000/last.ckpt"
+    # vae_checkpoint_path = "/mydata/dlbirhoui/chia/checkpoints/vae/aekl_clf2_sigmoid_new_5000/last.ckpt"
+    vae_checkpoint_path = "/mydata/dlbirhoui/chia/checkpoints/vae/aekl_clf2_sigmoid_new_1000/last.ckpt"
     # vae_checkpoint_path = "/mydata/dlbirhoui/chia/checkpoints/vae/aekl_lpips_disc/last.ckpt"
     # vae_checkpoint_path = "/mydata/dlbirhoui/chia/checkpoints/vae/aekl_lpips_disc_clf_adapt_smaller_weight_0.5/epoch=211-val_total_loss=0.0000.ckpt"
     # vae_checkpoint_path = "/mydata/dlbirhoui/chia/checkpoints/vae/aekl_before_sigmoid/last.ckpt"

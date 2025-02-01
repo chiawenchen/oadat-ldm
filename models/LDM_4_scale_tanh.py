@@ -7,7 +7,7 @@ from torch.optim.lr_scheduler import LinearLR
 from lightning.pytorch import LightningModule
 from diffusers import UNet2DModel, DDIMScheduler
 from torchvision.transforms import v2
-from config.config import LDMTrainingConfig
+from config.config2 import LDMTrainingConfig
 import wandb
 import os
 import numpy as np

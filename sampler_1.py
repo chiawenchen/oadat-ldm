@@ -222,12 +222,12 @@ def generate_filename(model_name, forward_timestep, backward_timestep, seed, cat
 if __name__ == "__main__":
     # settings
     num_sampling = 16
-    forward_timestep = 100
-    backward_timestep = 150
+    forward_timestep = 500
+    backward_timestep = 500
     sample_from_pure_noise = False
-    model_name = "cf_scd"
-    plot_results = ['denoised', 'original', 'noisy']
-    use_classifier_guidance = True
+    model_name = "dm_scd"
+    plot_results = ['denoised'] # , 'original', 'noisy'
+    use_classifier_guidance = False
     classifier_scale = 10
     config = TrainingConfig(num_epochs=0, batch_size=1)
     seed = config.seed
@@ -239,7 +239,7 @@ if __name__ == "__main__":
 
     # Load models
     diffusion_model = load_model(
-        "/mydata/dlbirhoui/chia/checkpoints/dm_shift_v_rescale/last.ckpt",
+        "/mydata/dlbirhoui/chia/checkpoints/dm_shift_v_rescale_/last.ckpt",
         DiffusionModel,
         config=config,
         noise_scheduler=noise_scheduler,
@@ -275,7 +275,8 @@ if __name__ == "__main__":
         scd_fname_h5 = "SCD_RawBP.h5" 
         scd_key = "vc_BP" # "labels" 
         scd_small_test_ind = np.load("/mydata/dlbirhoui/chia/oadat-ldm/config/scd_500px_blob_test_indices.npy")
-        batch_indices = scd_small_test_ind[-num_sampling:]
+        # batch_indices = scd_small_test_ind[-num_sampling:]
+        batch_indices = np.array([19732, 19736, 19751, 19876, 19804, 19840, 19772, 19981, 19785, 19964, 19836, 19920, 19950, 19908, 19925, 19796])
         if scd_key == 'labels':
             transform_mask = v2.Lambda(lambda x: (x > 0).astype(np.float32)) # convert skins and vessels to white
             transforms = v2.Compose([transform_mask, transforms])

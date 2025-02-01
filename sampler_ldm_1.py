@@ -1,15 +1,17 @@
 import os
 import torch
 import torch.nn.functional as F
+from torchvision.transforms import v2
 import numpy as np
 from matplotlib import pyplot as plt
 from tqdm import tqdm
 from diffusers import DDIMScheduler
 import dataset
-from config.config import TrainingConfig, ClassifierConfig
-from models.LDM import LatentDiffusionModel as LatentDiffusionModel
-from models.AutoencoderKL_clf2_sigmoid_adaptive_clf import VAE
-# from models.UnetClassifier import UnetAttentionClassifier
+from config.config3 import TrainingConfig, ClassifierConfig, LDMTrainingConfig
+from models.DDIM import DiffusionModel
+from models.LDM_5_scale_sigmoid_minus1to1 import LatentDiffusionModel
+from models.AutoencoderKL_clf2_sigmoid import VAE
+from models.UnetClassifier import UnetAttentionClassifier
 from utils import (
     get_last_checkpoint,
     get_named_beta_schedule,
@@ -20,7 +22,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print("device: ", device)
 
 
-def load_model(checkpoint_path, model_class, config=None, noise_scheduler=None, **dict):
+def load_model(checkpoint_path, model_class, config=None, noise_scheduler=None, vae=None, **dict):
     """Load model from checkpoint."""
     print("loading a model from: ", checkpoint_path)
     
@@ -28,6 +30,14 @@ def load_model(checkpoint_path, model_class, config=None, noise_scheduler=None, 
     if issubclass(model_class, DiffusionModel):
         model = model_class.load_from_checkpoint(
             checkpoint_path, config=config, noise_scheduler=noise_scheduler
+        )
+    elif issubclass(model_class, VAE):
+        model = model_class.load_from_checkpoint(
+            checkpoint_path, config=config
+        )
+    elif issubclass(model_class, LatentDiffusionModel):
+        model = model_class.load_from_checkpoint(
+            checkpoint_path, config=config, noise_scheduler=noise_scheduler, vae=vae
         )
     elif issubclass(model_class, UnetAttentionClassifier):
         config = ClassifierConfig()
@@ -38,8 +48,6 @@ def load_model(checkpoint_path, model_class, config=None, noise_scheduler=None, 
     model.to(device)
     model.eval()
     return model
-
-
 
 def prepare_images(fname, key, indices):
     """Load and preprocess a batch of images."""
@@ -220,115 +228,154 @@ def generate_filename(model_name, forward_timestep, backward_timestep, seed, cat
 
 # Main Execution
 if __name__ == "__main__":
-    # settings
     num_sampling = 16
-    forward_timestep = 100
-    backward_timestep = 150
-    sample_from_pure_noise = False
-    model_name = "cf_scd"
-    plot_results = ['denoised', 'original', 'noisy']
-    use_classifier_guidance = True
-    classifier_scale = 10
-    config = TrainingConfig(num_epochs=0, batch_size=1)
-    seed = config.seed
-
-    num_inference_steps = 1000
-    num_train_steps = 1000
-    noise_scheduler = get_named_beta_schedule("cosine_dark", num_train_steps)
-    output_dir = "./"
-
-    # Load models
-    diffusion_model = load_model(
-        "/mydata/dlbirhoui/chia/checkpoints/dm_shift_v_rescale/last.ckpt",
-        DiffusionModel,
-        config=config,
-        noise_scheduler=noise_scheduler,
-    )
-    classifier = None
-    if use_classifier_guidance:
-        classifier = load_model(
-            "/mydata/dlbirhoui/chia/checkpoints/classifier/clf_v_atten/last.ckpt",
-            UnetAttentionClassifier,
-        )
     
-    # Check models
-    print("use_classifier_guidance: ", use_classifier_guidance)
-    print('prediction_type: ', diffusion_model.noise_scheduler.config.prediction_type)
-    print('timestep_spacing: ', diffusion_model.noise_scheduler.config.timestep_spacing)
-    print('rescale_betas_zero_snr: ', diffusion_model.noise_scheduler.config.rescale_betas_zero_snr)
-    print('beta_schedule: ', diffusion_model.noise_scheduler.config.beta_schedule)
+    forward_timestep_list = [0]
+    backward_timestep_list = [25, 50, 75, 100, 125, 150]
 
-    # Initialize noise
-    local_rng = torch.Generator(device="cuda").manual_seed(seed)
-    noise = torch.randn((num_sampling, 1, config.image_size, config.image_size), device=device, generator=local_rng)
-    noise_scheduler = diffusion_model.noise_scheduler
-    noise_scheduler.set_timesteps(num_inference_steps=num_inference_steps)
+    for forward_timestep in forward_timestep_list:
+        for backward_timestep in backward_timestep_list:
+            sample_from_pure_noise = False
+            model_name = "ldm_label_gray"
+            plot_results = ['denoised'] # 'original'
+            use_classifier_guidance = False
+            classifier_scale = 10
+            is_ldm = True
+            if is_ldm:
+                config = LDMTrainingConfig(num_epochs=0, batch_size=1)
+            else:
+                config = TrainingConfig(num_epochs=0, batch_size=1)
+            seed = config.seed
 
-    # Sample from pure noise
-    if sample_from_pure_noise:
-        noisy_images = noise
-        batch_indices = ['pure_noise'] * num_sampling
-        print(f"Sampled from pure noise")
+            num_inference_steps = 1000
+            num_train_steps = 1000
+            noise_scheduler = get_named_beta_schedule("cosine_dark", num_train_steps)
+            output_dir = "./"
 
-    # Sample from dataset
-    else:
-        scd_fname_h5 = "SCD_RawBP.h5" 
-        scd_key = "vc_BP" # "labels" 
-        scd_small_test_ind = np.load("/mydata/dlbirhoui/chia/oadat-ldm/config/scd_500px_blob_test_indices.npy")
-        batch_indices = scd_small_test_ind[-num_sampling:]
-        if scd_key == 'labels':
-            transform_mask = v2.Lambda(lambda x: (x > 0).astype(np.float32)) # convert skins and vessels to white
-            transforms = v2.Compose([transform_mask, transforms])
+            # Load models
+            vae = load_model("/mydata/dlbirhoui/chia/checkpoints/vae/aekl_clf2_sigmoid/last.ckpt", VAE, config=config)
+            if is_ldm:
+                diffusion_model = load_model(
+                    "/mydata/dlbirhoui/chia/checkpoints/ldm-clf2-sigmoid-minus1to1/last.ckpt",
+                    LatentDiffusionModel,
+                    config=config,
+                    noise_scheduler=noise_scheduler,
+                    vae=vae
+                )
+            else:
+                diffusion_model = load_model(
+                    "/mydata/dlbirhoui/chia/checkpoints/dm_shift_v_rescale/last.ckpt",
+                    DiffusionModel,
+                    config=config,
+                    noise_scheduler=noise_scheduler,
+                )
+            classifier = None
+            if use_classifier_guidance:
+                classifier = load_model(
+                    "/mydata/dlbirhoui/chia/checkpoints/classifier/clf_v_atten/last.ckpt",
+                    UnetAttentionClassifier,
+                )
 
-        scd_image_batch = prepare_images(
-            scd_fname_h5, scd_key, batch_indices
-        )
-        print(f"Sampled from {scd_fname_h5}, key={scd_key}, indices={batch_indices}")
-        print('Adding noise...')
-        noisy_images = noise_scheduler.add_noise(
-            scd_image_batch,
-            noise,
-            torch.full(
-                (scd_image_batch.size(0),),
+            
+            # Check models
+            print("use_classifier_guidance: ", use_classifier_guidance)
+            print('prediction_type: ', diffusion_model.noise_scheduler.config.prediction_type)
+            print('timestep_spacing: ', diffusion_model.noise_scheduler.config.timestep_spacing)
+            print('rescale_betas_zero_snr: ', diffusion_model.noise_scheduler.config.rescale_betas_zero_snr)
+            print('beta_schedule: ', diffusion_model.noise_scheduler.config.beta_schedule)
+
+            # extract latent space
+            noise_size = config.image_size
+            if is_ldm == True:
+                noise_size = config.latent_size
+
+            # Initialize noise
+            local_rng = torch.Generator(device="cuda").manual_seed(seed)
+            noise = torch.randn((num_sampling, 1, noise_size, noise_size), device=device, generator=local_rng)
+            noise_scheduler = diffusion_model.noise_scheduler
+            noise_scheduler.set_timesteps(num_inference_steps=num_inference_steps)
+
+            # Sample from pure noise
+            if sample_from_pure_noise and is_ldm is False:
+                noisy_images = noise
+                batch_indices = ['pure_noise'] * num_sampling
+                print(f"Sampled from pure noise")
+
+            # Sample from dataset
+            else:
+                scd_fname_h5 = "SCD_RawBP.h5" # "SWFD_semicircle_RawBP.h5" #  
+                scd_key = "labels"# "vc_BP" #"sc_BP" # # "labels" 
+                # scd_small_test_ind = np.load("/mydata/dlbirhoui/chia/oadat-ldm/config/test_sc_BP_indices.npy")
+                # scd_small_test_ind = np.load("/mydata/dlbirhoui/chia/oadat-ldm/config/scd_500px_blob_test_indices.npy")
+                # batch_indices = np.random.choice(scd_small_test_ind, num_sampling, replace=False)
+                batch_indices = np.array([19732, 19736, 19751, 19876, 19804, 19840, 19772, 19981, 19785, 19964, 19836, 19920, 19950, 19908, 19925, 19796])
+                # batch_indices = scd_small_test_ind[-num_sampling:]
+                if scd_key == 'labels':
+                    # transform_mask = v2.Lambda(lambda x: (x > 0).astype(np.float32)) # convert skins and vessels to white
+                    transform_mask = v2.Lambda(lambda x: (x > 0) * 0.5) # convert skins and vessels to gray
+                    transforms = v2.Compose([transform_mask, transforms])
+
+                scd_image_batch = prepare_images(
+                    scd_fname_h5, scd_key, batch_indices
+                )
+
+                input_images = scd_image_batch
+                # extract latent representation if using latent diffusion
+                if is_ldm:
+                    input_images = torch.sigmoid(vae.vae.encode(scd_image_batch).latent_dist.sample())
+                    input_images = input_images * 2.0 - 1.0
+
+                print(f"Sampled from {scd_fname_h5}, key={scd_key}, indices={batch_indices}")
+                print('Adding noise...')
+                noisy_images = noise_scheduler.add_noise(
+                    input_images,
+                    noise,
+                    torch.full(
+                        (input_images.size(0),),
+                        forward_timestep,
+                        dtype=torch.int64,
+                        device=device,
+                    ),
+                )
+
+            # Plot original and noisy images
+            if 'original' in plot_results and sample_from_pure_noise == False:
+                filename = generate_filename(model_name, forward_timestep, backward_timestep, seed, category="original")
+                plot_batch_results(scd_image_batch, batch_indices, output_dir, filename, "original")
+
+            if 'noisy' in plot_results and is_ldm is False:
+                filename = generate_filename(model_name, forward_timestep, backward_timestep, seed, category="noisy")
+                plot_batch_results(noisy_images, batch_indices, output_dir, filename, "noisy")
+
+            if 'denoised' not in plot_results:
+                print('skip sampling!')
+
+            # Generate filename
+            filename = generate_filename(
+                model_name,
                 forward_timestep,
-                dtype=torch.int64,
-                device=device,
-            ),
-        )
+                backward_timestep,
+                seed,
+                category="denoised",
+            )
 
-    # Plot original and noisy images
-    if 'original' in plot_results and sample_from_pure_noise == False:
-        filename = generate_filename(model_name, forward_timestep, backward_timestep, seed, category="original")
-        plot_batch_results(scd_image_batch, batch_indices, output_dir, filename, "original")
+            # Sampling
+            denoised_output = sampling(
+                diffusion_model,
+                noisy_images,
+                backward_timestep,
+                # input_images,
+                # batch_indices,
+                # output_dir,
+                classifier=classifier,
+                classifier_scale=classifier_scale,
+                prediction_type='v_prediction'
+            )
 
-    if 'noisy' in plot_results:
-        filename = generate_filename(model_name, forward_timestep, backward_timestep, seed, category="noisy")
-        plot_batch_results(noisy_images, batch_indices, output_dir, filename, "noisy")
+            # Decode denoised output
+            if is_ldm:
+                denoised_output = (denoised_output + 1.0) / 2.0
+                denoised_output = vae.vae.decode(denoised_output).sample
 
-    if 'denoised' not in plot_results:
-        print('skip sampling!')
-
-    # Generate filename
-    filename = generate_filename(
-        model_name,
-        forward_timestep,
-        backward_timestep,
-        seed,
-        category="denoised",
-    )
-
-    # Sampling
-    denoised_images = sampling(
-        diffusion_model,
-        noisy_images,
-        backward_timestep,
-        # scd_image_batch,
-        # batch_indices,
-        # output_dir,
-        classifier=classifier,
-        classifier_scale=classifier_scale,
-        prediction_type='v_prediction'
-    )
-
-    # Save results
-    plot_batch_results(denoised_images, batch_indices, output_dir, filename, "denoised")
+            # Save results
+            plot_batch_results(denoised_output, batch_indices, output_dir, filename, "denoised")
