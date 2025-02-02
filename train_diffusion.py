@@ -5,7 +5,7 @@ import numpy as np
 from config.parser import parse_arguments
 from datamodule import OADATDataModule
 from models.DDIM import DiffusionModel
-from utils import get_last_checkpoint, get_named_beta_schedule, load_config_from_yaml, convert_namespace_to_dict
+from utils import get_last_checkpoint, get_named_beta_schedule, load_config_from_yaml
 from lightning.pytorch import Trainer
 from lightning.pytorch.callbacks import ModelCheckpoint, ModelSummary
 from lightning.pytorch.loggers import WandbLogger

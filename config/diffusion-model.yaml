@@ -4,7 +4,6 @@ training_config:
   batch_size: 32
   num_epochs: 50
   num_workers: 4
-  gradient_accumulation_steps: 1
   learning_rate: 0.0001
   lr_warmup_epochs: 5
   save_image_epochs: 5
@@ -19,7 +18,7 @@ training_config:
   dataset:
     scd_train_indices: "/mydata/dlbirhoui/chia/oadat-ldm/config/scd_500px_blob_train_indices.npy"
     swfd_train_indices: "/mydata/dlbirhoui/chia/oadat-ldm/config/train_sc_BP_indices.npy"
-    mix_swfd_scd: false  # Set to False to mix datasets
+    mix_swfd_scd: false  # Set to False to use swfd data only
 
   # Paths and directories
   paths:
@@ -35,9 +34,9 @@ training_config:
     project_name: "sem-proj-diffusion-model"
     job_name: "diffusion-model"
 
-  # Checkpointing settings (optional, adjust as needed)
+  # Checkpointing settings
   checkpointing:
-    save_top_k: 3  # Number of best checkpoints to keep
+    save_top_k: 3 
     monitor_metric: "val_loss"
     monitor_mode: "min"
     save_last: true

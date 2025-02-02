@@ -122,7 +122,7 @@ class OADATDataModule(LightningDataModule):
                     self.val_indices,
                     self.swfd_label
                 )
-
+        # For debugging and visualization
         self.scd_obj = self.load_dataset(
             "SCD_RawBP.h5",
             "vc_BP",
@@ -142,14 +142,6 @@ class OADATDataModule(LightningDataModule):
     def val_dataloader(self) -> DataLoader:
         return DataLoader(
             self.val_obj,
-            batch_size=self.batch_size,
-            shuffle=False,
-            num_workers=self.num_workers,
-        )
-
-    def test_dataloader(self) -> DataLoader:
-        return DataLoader(
-            self.test_obj,
             batch_size=self.batch_size,
             shuffle=False,
             num_workers=self.num_workers,

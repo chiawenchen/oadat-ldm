@@ -1,1 +1,1 @@
-python train_vae.py --oadat_dir /mydata/dlbirhoui/firat/OADAT --num_epochs 150 --gpus 1 --batch_size 92 --num_workers 4 --job_name vae-blablabla --mix_swfd_scd --condition_vae
+python train_vae.py --oadat_dir /mydata/dlbirhoui/firat/OADAT --gpus 1 --config_path /mydata/dlbirhoui/chia/oadat-ldm/config/vae.yaml

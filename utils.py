@@ -111,14 +111,6 @@ def dict_to_namespace(d):
     else:
         return d
 
-def convert_namespace_to_dict(obj):
-    """Recursively converts a SimpleNamespace object to a dictionary"""
-    if isinstance(obj, SimpleNamespace):
-        return {key: convert_namespace_to_dict(value) for key, value in vars(obj).items()}
-    elif isinstance(obj, list):
-        return [convert_namespace_to_dict(item) for item in obj]
-    return obj
-
 def load_config_from_yaml(yaml_path: str):
     """Load training configuration from a YAML file and convert to dot-accessible object."""
     with open(yaml_path, "r") as f:

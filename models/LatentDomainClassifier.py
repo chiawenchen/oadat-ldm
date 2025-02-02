@@ -1,7 +1,8 @@
-from torchvision.models import resnet18
+# LatentDomainClassifier.py: pull the latent spaces of swfd and scd closer when training VAEs
 import torch.nn as nn
 from torch.autograd import Function
 
+# ReverseLayerF is based on: https://github.com/fungtion/DANN_py3/blob/master/functions.py
 class ReverseLayerF(Function):
     @staticmethod
     def forward(ctx, x, alpha):
@@ -13,6 +14,7 @@ class ReverseLayerF(Function):
         return grad_output.neg() * ctx.alpha, None
 
 class Classifier(nn.Module):
+    """ Same architecture as SimpleClassifier but with ReverseLayerF """
     def __init__(self, latent_channels):
         super(Classifier, self).__init__()
         self.feature_extractor = nn.Sequential(
@@ -31,17 +33,17 @@ class Classifier(nn.Module):
             nn.BatchNorm1d(100),
             nn.ReLU(),
             nn.Linear(100, 2),
-            # nn.LogSoftmax(dim=1),
         )
 
     def forward(self, z, alpha):
         z = ReverseLayerF.apply(z, alpha)
         z = self.feature_extractor(z)
-        z = z.view(z.size(0), -1)  # Flatten
+        z = z.view(z.size(0), -1)
         output = self.classifier(z)
         return output
 
 class SimpleClassifier(nn.Module):
+    """ Classifier with CNN """
     def __init__(self, latent_channels):
         super(SimpleClassifier, self).__init__()
         self.feature_extractor = nn.Sequential(
@@ -69,6 +71,7 @@ class SimpleClassifier(nn.Module):
         return output
 
 class SimpleMLP(nn.Module):
+    """ Classifer with MLP only """
     def __init__(self, latent_dim, num_classes):
         super(SimpleMLP, self).__init__()
         self.fc = nn.Sequential(
@@ -79,17 +82,4 @@ class SimpleMLP(nn.Module):
 
     def forward(self, x):
         return self.fc(x)
-
-
-# class ResnetClassifier(nn.Module):
-#     def __init__(self, latent_channels, num_classes):
-#         super(ResnetClassifier, self).__init__()
-#         self.model = resnet18(pretrained=True)
-#         # Replace the first convolution layer to match the latent shape (3x32x32)
-#         self.model.conv1 = nn.Conv2d(latent_channels, 64, kernel_size=3, stride=1, padding=1, bias=False)
-#         # Replace the output layer for binary classification
-#         self.model.fc = nn.Linear(self.model.fc.in_features, num_classes)
-
-#     def forward(self, x):
-#         return self.model(x)
 

@@ -93,6 +93,7 @@ class Dataset:
             return x, self.label
         return x
 
+    ## This is not working if using torch.utils.data.DataLoader since the dataloader use __getitem__ to fetch data:
     # def __iter__(self):
     #     print("Using __iter__ of the customized dataset!")
     #     inds = np.copy(self.inds)
@@ -101,27 +102,3 @@ class Dataset:
     #     for i in inds:
     #         s = self.__getitem__(index=i)
     #         yield s
-
-# class LabeledDataset(Dataset):
-#     def __init__(
-#         self,
-#         fname_h5,
-#         key,
-#         transforms,
-#         inds,
-#         label,
-#         shuffle=False,
-#         **kwargs,
-#     ):
-#         super().__init__(fname_h5, key, transforms, inds, shuffle=shuffle, **kwargs)
-#         self.label = label
-#         print("len inds: ", len(self.inds))
-
-#     def __getitem__(self, index):
-#         # Load the base image data as before
-#         with h5py.File(self.fname_h5, "r") as fh:
-#             x = fh[self.key][self.inds[index], ...] 
-#             x = x[None, ...]  # Add a channel dimension [1, H, W]
-#             if self.transforms is not None:
-#                 x = self.transforms(x)
-#         return x, self.label

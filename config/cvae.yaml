@@ -1,0 +1,55 @@
+training_config:
+  # General training settings
+  image_size: 256
+  batch_size: 92
+  num_epochs: 200
+  num_workers: 4
+  learning_rate: 0.0001
+  lr_warmup_epochs: 5
+  save_image_epochs: 5
+  seed: 42
+  sample_num: 11
+  use_domain_classifier: true
+  cvae: false
+
+  # VAE model settings
+  latent_channels: 3
+  latent_size: 32
+  num_down_blocks: 4
+  num_up_blocks: 4
+  num_classes: 2
+  block_out_channels: [64, 64, 128, 256]
+
+  # Loss settings
+  kl_loss_weight: 1.0e-06
+  disc_start: 5551
+  disc_weight: 0.5
+
+  # Paths and directories
+  paths:
+    sample_dir: "/mydata/dlbirhoui/chia/samples/vae_after_2500"
+    vae_ckpt_dir: "/mydata/dlbirhoui/chia/checkpoints/all/vae_after_2500"
+
+  # Weights for classifier losses
+  weights:
+    classifier_weight: 2500.0
+    classifier_scale: -1.0
+
+  # Logging and monitoring
+  wandb:
+    project_name: "sem-proj-vae"
+    job_name: "vae_after_2500"
+
+  # Checkpointing settings
+  checkpointing:
+    save_top_k: 3
+    monitor_metric: "val/total_loss"
+    monitor_mode: "min"
+    save_last: true
+    filename_format: "{epoch:02d}-{val_total_loss:.4f}"
+  
+  # Dataset and training strategy
+  dataset:
+    scd_train_indices: "/mydata/dlbirhoui/chia/oadat-ldm/config/scd_500px_blob_train_indices.npy"
+    swfd_train_indices: "/mydata/dlbirhoui/chia/oadat-ldm/config/train_sc_BP_indices.npy"
+    mix_swfd_scd: true  # Set to False to use swfd data only
