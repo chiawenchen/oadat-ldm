@@ -5,6 +5,9 @@ from torchvision.transforms import v2
 import numpy as np
 from diffusers import DDIMScheduler
 import torch
+import yaml
+from types import SimpleNamespace
+
 
 
 def get_last_checkpoint(checkpoint_dir: str) -> str:
@@ -98,3 +101,27 @@ scd_transforms = v2.Compose(
         v2.Normalize([SCD_MEAN], [SCD_STD]),  # Normalize using mean and std
     ]
 )
+
+def dict_to_namespace(d):
+    """Recursively converts dictionaries to an object with dot notation access."""
+    if isinstance(d, dict):
+        return SimpleNamespace(**{k: dict_to_namespace(v) for k, v in d.items()})
+    elif isinstance(d, list):
+        return [dict_to_namespace(i) for i in d]
+    else:
+        return d
+
+def convert_namespace_to_dict(obj):
+    """Recursively converts a SimpleNamespace object to a dictionary"""
+    if isinstance(obj, SimpleNamespace):
+        return {key: convert_namespace_to_dict(value) for key, value in vars(obj).items()}
+    elif isinstance(obj, list):
+        return [convert_namespace_to_dict(item) for item in obj]
+    return obj
+
+def load_config_from_yaml(yaml_path: str):
+    """Load training configuration from a YAML file and convert to dot-accessible object."""
+    with open(yaml_path, "r") as f:
+        config_dict = yaml.safe_load(f)
+    
+    return dict_to_namespace(config_dict["training_config"])  # Convert and return

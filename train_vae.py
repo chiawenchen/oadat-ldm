@@ -16,13 +16,14 @@ from torchvision import models
 from torchvision.transforms import v2
 
 from diffusers import DDIMScheduler
-from config.config import ClassifierConfig, parse_arguments
+from config.config import LDMTrainingConfig, parse_arguments
 from utils import get_last_checkpoint, get_named_beta_schedule
 import dataset
 from datamodule import OADATDataModule
 
-from models.VQVAE import VQVAE
-from models.VAE import VAE
+# from models.VAE import VAE
+from models.AutoencoderKL import VAE
+from models.AutoencoderKL_clf2_sigmoid_adaptive_clf_new import VAE as condition_VAE
 
 torch.set_float32_matmul_precision("medium")
 
@@ -32,20 +33,22 @@ def main():
     # Parse command-line arguments
     args = parse_arguments()
 
+    config = LDMTrainingConfig(
+        num_epochs=args.num_epochs,
+        batch_size=args.batch_size,
+        # block_out_channels=args.block_out_channels
+    )
+
     # sample directory
     sample_dir = os.path.join("/mydata/dlbirhoui/chia/samples/vae", args.job_name)
     os.makedirs(sample_dir, exist_ok=True)
+    config.sample_dir = sample_dir
 
     # vae model
-    model = VQVAE(sample_dir=sample_dir)
-
-    # Set up logger
-    logger = WandbLogger(
-        project="vae",
-        name=args.job_name,
-        log_model=False,
-        # config=config.__dict__
-    )
+    if args.condition_vae:
+        model = condition_VAE(config=config)
+    else:
+        model = VAE(config=config)
 
     # DataModule
     indices_scd = np.load("/mydata/dlbirhoui/chia/oadat-ldm/config/scd_500px_blob_train_indices.npy")
@@ -56,22 +59,32 @@ def main():
         num_workers=args.num_workers,
         mix_swfd_scd=args.mix_swfd_scd,
         indices_swfd=indices_swfd,
-        indices_scd=indices_scd
+        indices_scd=indices_scd,
+        return_labels=args.condition_vae
     )
 
     # Set up checkpoint callback
     ckpt_dir = os.path.join("/mydata/dlbirhoui/chia/checkpoints/vae", args.job_name)
     os.makedirs(ckpt_dir, exist_ok=True)
+    config.vae_ckpt_dir = ckpt_dir
     checkpoint_callback = ModelCheckpoint(
         dirpath=ckpt_dir,
         save_top_k=3,
-        monitor="val_loss",
+        monitor="val/total_loss",
         mode="min",
         save_weights_only=False,
         save_last=True,
-        filename="{epoch:02d}-{val_loss:.4f}",
+        filename="{epoch:02d}-{val_total_loss:.4f}",
     )
 
+    # Set up logger
+    logger = WandbLogger(
+        project="vae",
+        name=args.job_name,
+        log_model=False,
+        config=config.__dict__
+    )
+    
     # Trainer with Wandb logger
     trainer = Trainer(
         max_epochs=args.num_epochs,

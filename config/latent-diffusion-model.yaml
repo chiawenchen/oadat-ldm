@@ -1,0 +1,41 @@
+training_config:
+  # General training settings
+  image_size: 256
+  batch_size: 128
+  num_epochs: 250
+  learning_rate: 0.0001
+  lr_warmup_epochs: 5
+  save_image_epochs: 5
+  seed: 42
+  sample_num: 11
+
+  # Diffusion model settings
+  num_train_timesteps: 1000
+
+  # Latent diffusion model settings
+  latent:
+  latent_channels: 3
+  latent_size: 32
+  num_down_blocks: 4
+  num_up_blocks: 4
+  num_classes: 2
+  layers_per_block: 2
+  block_out_channels: [64, 128, 192, 256]
+
+  # Loss settings
+  kl_loss_weight: 1.0e-06
+  disc_start: 5551
+  disc_weight: 0.5
+
+  # Paths and directories
+  paths:
+    output_dir: "/mydata/dlbirhoui/chia/"
+    sample_dir: null  # Equivalent to None in Python
+    vae_ckpt_dir: "/mydata/dlbirhoui/chia/checkpoints/vae/aekl_clf2/epoch=149-val_total_loss=0.0000.ckpt"
+    cvae_ckpt_dir: "/mydata/dlbirhoui/chia/checkpoints/vae/aekl_lpips_disc_clf_cvae/last.ckpt"
+
+  # Weights for classifier losses
+  weights:
+    adv_weight: 5000
+    classifier_weight: 1000.0
+    classifier_scale: -1.0

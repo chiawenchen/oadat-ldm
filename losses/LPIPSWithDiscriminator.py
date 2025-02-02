@@ -1,3 +1,4 @@
+# Based on https://github.com/CompVis/latent-diffusion/blob/main/ldm/modules/losses/contperceptual.py
 import torch
 from torch import nn
 import torch.nn.functional as F
@@ -112,7 +113,7 @@ class LPIPSWithDiscriminator(nn.Module):
 
             log = {
                 "{}/disc_loss".format(split): d_loss.clone().detach().mean(),
-                # "{}/logits_real".format(split): logits_real.detach().mean(),
-                # "{}/logits_fake".format(split): logits_fake.detach().mean()
+                "{}/logits_real".format(split): logits_real.detach().mean(),
+                "{}/logits_fake".format(split): logits_fake.detach().mean()
                 }
             return d_loss, log

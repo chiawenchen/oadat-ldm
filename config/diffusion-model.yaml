@@ -1,0 +1,45 @@
+training_config:
+  # General training settings
+  image_size: 256
+  batch_size: 32
+  num_epochs: 50
+  num_workers: 4
+  gradient_accumulation_steps: 1
+  learning_rate: 0.0001
+  lr_warmup_epochs: 5
+  save_image_epochs: 5
+  seed: 42
+  sample_num: 11
+
+  # Diffusion model settings
+  num_train_timesteps: 1000
+  noise_schedule: "cosine_dark"
+
+  # Dataset and training strategy
+  dataset:
+    scd_train_indices: "/mydata/dlbirhoui/chia/oadat-ldm/config/scd_500px_blob_train_indices.npy"
+    swfd_train_indices: "/mydata/dlbirhoui/chia/oadat-ldm/config/train_sc_BP_indices.npy"
+    mix_swfd_scd: false  # Set to False to mix datasets
+
+  # Paths and directories
+  paths:
+    output_dir: "/mydata/dlbirhoui/chia/"  # Directory to save models, logs, and checkpoints
+    sample_dir: "/mydata/dlbirhoui/chia/samples/diffusion-model"
+    fixed_image_paths:
+      swfd: "/mydata/dlbirhoui/chia/samples/diffusion-model/swfd_fixed_noisy_images"
+      scd: "/mydata/dlbirhoui/chia/samples/diffusion-model/scd_fixed_noisy_images"
+      prepicked_noise: "/mydata/dlbirhoui/chia/samples/diffusion-model/prepicked_noise_fixed_noisy_images"
+
+  # Logging and monitoring
+  wandb:
+    project_name: "sem-proj-diffusion-model"
+    job_name: "diffusion-model"
+
+  # Checkpointing settings (optional, adjust as needed)
+  checkpointing:
+    save_top_k: 3  # Number of best checkpoints to keep
+    monitor_metric: "val_loss"
+    monitor_mode: "min"
+    save_last: true
+    filename_format: "{epoch:02d}-{val_loss:.4f}"
+

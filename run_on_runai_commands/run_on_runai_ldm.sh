@@ -1,5 +1,1 @@
-# python train_ldm.py --oadat_dir /mydata/dlbirhoui/firat/OADAT --num_epochs 250 --gpus 1 --batch_size 128 --num_workers 4 --job_name ldm-size16-scale-factor --noise_schedule cosine_dark
-# python train_ldm.py --oadat_dir /mydata/dlbirhoui/firat/OADAT --num_epochs 250 --gpus 1 --batch_size 128 --num_workers 4 --job_name ldm-size16-scale-factor-mean --noise_schedule cosine_dark
-# python train_ldm.py --oadat_dir /mydata/dlbirhoui/firat/OADAT --num_epochs 250 --gpus 1 --batch_size 128 --num_workers 4 --job_name ldm-size4-shift-244vae-copy --noise_schedule cosine_dark
-# python train_ldm.py --oadat_dir /mydata/dlbirhoui/firat/OADAT --num_epochs 250 --gpus 1 --batch_size 128 --num_workers 4 --job_name ldm-minmax --noise_schedule cosine_dark
-python train_ldm.py --oadat_dir /mydata/dlbirhoui/firat/OADAT --num_epochs 150 --gpus 1 --batch_size 128 --num_workers 4 --job_name ldm-clf2-batch-scaling --noise_schedule cosine_dark
+python train_ldm.py --oadat_dir /mydata/dlbirhoui/firat/OADAT --num_epochs 250 --gpus 1 --batch_size 128 --num_workers 4 --job_name latent-diffusion --noise_schedule cosine_dark

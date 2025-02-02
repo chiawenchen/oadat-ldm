@@ -27,7 +27,6 @@ class TrainingConfig:
     image_size: int = 256
     batch_size: int = 32
     num_epochs: int = 50
-    gradient_accumulation_steps: int = 1
     learning_rate: float = 1e-4
     lr_warmup_epochs: int = 5
     save_image_epochs: int = 5
@@ -84,30 +83,6 @@ class LDMTrainingConfig:
     classifier_weight: float = 1000.0
     classifier_scale: float = -1.0
 
-# @dataclass
-# class VQVAETrainingConfig:
-#     # Existing parameters
-#     num_epochs: int = 250
-#     batch_size: int = 128
-#     vae_ckpt_dir: str = "/mydata/dlbirhoui/chia/checkpoints/vae/vae/last.ckpt"
-#     seed: int = 42
-#     in_channels: int = 1
-#     out_channels: int = 1
-#     latent_channels: int = 64
-#     sample_size: int = 256
-#     block_out_channels: list = field(default_factory=lambda: [32, 64, 128, 256])
-#     num_down_blocks: int = 4
-#     num_up_blocks: int = 4
-#     save_image_epochs: int = 5
-#     sample_dir: str = './samples'
-#     learning_rate: float = 1e-4
-#     lr_warmup_epochs: int = 5
-#     # New parameters for VQModel
-#     num_vq_embeddings: int = 512  # Size of the codebook
-#     vq_embed_dim: int = 256       # Dimension of each embedding vector
-#     latent_size: int = 32         # Spatial size of the latent representation
-
-
 def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Train a diffusion model on OADAT data."
@@ -155,10 +130,4 @@ def parse_arguments() -> argparse.Namespace:
         type=parse_numbers,
         help="block_out_channels",
     )
-    # parser.add_argument(
-    #     "--balance_class",
-    #     type=bool,
-    #     default=False,
-    #     help="balance classes for classifier training (True or False)",
-    # )
     return parser.parse_args()
