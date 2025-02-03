@@ -13,6 +13,7 @@ import dataset
 from datamodule import OADATDataModule
 
 from models.VAE import VAE
+from models.CVAE_after_sigmoid import CVAE
 
 # Set precision for matrix multiplications
 torch.set_float32_matmul_precision("medium")
@@ -49,10 +50,10 @@ def main():
     os.makedirs(config.paths.sample_dir, exist_ok=True)
 
     # Initialize the VAE
-    # if config.cvae:
-    #     model = CVAE(config=config)
-    # else:
-    model = VAE(config=config)
+    if config.cvae:
+        model = CVAE(config=config)
+    else:
+        model = VAE(config=config)
 
     # Set up WandB logger
     logger = WandbLogger(

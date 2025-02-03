@@ -1,7 +1,1 @@
-# python train_classifier.py --oadat_dir /mydata/dlbirhoui/firat/OADAT --num_epochs 200 --gpus 1 --batch_size 128 --num_workers 4 --job_name unet_classifier --noise_schedule cosine --classifier unet
-# python train_classifier.py --oadat_dir /mydata/dlbirhoui/firat/OADAT --num_epochs 200 --gpus 1 --batch_size 128 --num_workers 4 --job_name unet_classifier_cosine --noise_schedule cosine --classifier unet
-# python train_classifier.py --oadat_dir /mydata/dlbirhoui/firat/OADAT --num_epochs 200 --gpus 1 --batch_size 8 --num_workers 4 --job_name attention_unet_classifier_cosine --noise_schedule cosine --classifier unet_attention
-# python train_classifier_without_scale_shift.py --oadat_dir /mydata/dlbirhoui/firat/OADAT --num_epochs 200 --gpus 1 --batch_size 8 --num_workers 4 --job_name attention_unet_classifier_cosine_wo_scale_shift --noise_schedule cosine --classifier unet_attention
-# python train_classifier.py --oadat_dir /mydata/dlbirhoui/firat/OADAT --num_epochs 200 --gpus 1 --batch_size 8 --num_workers 4 --job_name clf_shift_v --noise_schedule cosine_vpred --classifier unet_attention
-# python train_classifier_small_blob_balanced.py --oadat_dir /mydata/dlbirhoui/firat/OADAT --num_epochs 200 --gpus 1 --batch_size 8 --num_workers 4 --job_name clf_shift_v_small_blob_balanced --noise_schedule cosine_vpred --classifier unet_attention
-python train_classifier.py --oadat_dir /mydata/dlbirhoui/firat/OADAT --num_epochs 200 --gpus 1 --batch_size 100 --num_workers 4 --job_name clf_v_atten --noise_schedule cosine_dark --classifier unet_attention
+python train_classifier.py --oadat_dir /mydata/dlbirhoui/firat/OADAT --gpus 1 --config_path /mydata/dlbirhoui/chia/oadat-ldm/config/classifier-guidance.yaml

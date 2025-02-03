@@ -10,6 +10,9 @@ def parse_arguments() -> argparse.Namespace:
         "--config_path", default="/mydata/dlbirhoui/chia/oadat-ldm/config/diffusion-model.yaml", type=str, help="Path to the config"
     )
     parser.add_argument(
+        "--vae_config_path", default="/mydata/dlbirhoui/chia/oadat-ldm/config/vae.yaml", type=str, help="Path to the vae config"
+    )
+    parser.add_argument(
         "--oadat_dir", default="oadat", type=str, help="Path to the OADAT data folder"
     )
     parser.add_argument(

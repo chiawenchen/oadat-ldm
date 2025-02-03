@@ -1,0 +1,42 @@
+training_config:
+  num_workers: 4
+  noise_schedule: "cosine_dark"
+  num_epochs: 200
+  batch_size: 100
+  # Model architecture settings
+  model:
+    im_channels: 1
+    down_ch: [32, 64, 128, 256]
+    mid_ch: [256, 256, 128]
+    down_sample: [True, True, True]
+    use_self_attention: [False, False, True]
+    t_emb_dim: 128
+    num_downc_layers: 2
+    num_midc_layers: 2
+    use_scale_shift_norm: True
+    num_classes: 2
+
+    # Training settings
+    learning_rate: 0.0001
+    num_train_timesteps: 1000
+
+  # Dataset indices
+  dataset:
+    scd_train_indices: "/mydata/dlbirhoui/chia/oadat-ldm/config/scd_500px_blob_train_indices.npy"
+    swfd_train_indices: "/mydata/dlbirhoui/chia/oadat-ldm/config/train_sc_BP_indices.npy"
+
+  # Logging and monitoring
+  wandb:
+    project_name: "sem-proj-classifier-guidance"
+    job_name: "classifier-guidance"
+
+  # Checkpointing settings
+  checkpointing:
+    save_top_k: 3
+    monitor_metric: "val_loss"
+    monitor_mode: "min"
+    save_last: true
+    filename_format: "{epoch:02d}-{val_loss:.4f}"
+
+  # Paths and directories
+  ckpt_dir: "/mydata/dlbirhoui/chia/checkpoints/all/classifier-guidance"

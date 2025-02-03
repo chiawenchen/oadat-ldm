@@ -1,1 +1,1 @@
-python train_ldm.py --oadat_dir /mydata/dlbirhoui/firat/OADAT --num_epochs 250 --gpus 1 --batch_size 128 --num_workers 4 --job_name latent-diffusion --noise_schedule cosine_dark
+python train_latent_diffusion.py --oadat_dir /mydata/dlbirhoui/firat/OADAT --gpus 1 --config_path /mydata/dlbirhoui/chia/oadat-ldm/config/latent-diffusion-model-vae-after-2500.yaml

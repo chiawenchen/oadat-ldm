@@ -103,7 +103,7 @@ class DiffusionModel(LightningModule):
         noisy_images = self.noise_scheduler.add_noise(clean_images, noises, timesteps)
         predicted_v = self(noisy_images, timesteps).sample
 
-        # Compute ground truth
+        # Compute ground truth v
         alpha_t = (self.noise_scheduler.alphas_cumprod[timesteps].sqrt().view(-1, 1, 1, 1))
         sigma_t = ((1 - self.noise_scheduler.alphas_cumprod[timesteps]).sqrt().view(-1, 1, 1, 1))
         ground_truth_v = alpha_t * noises - sigma_t * clean_images
@@ -147,6 +147,7 @@ class DiffusionModel(LightningModule):
 
         return val_loss
 
+### Below is for debugging and visualization at the end of every n epochs ###
     def save_image(self, image: torch.Tensor, path: str, wandb_name: str) -> None:
         """Saves an image locally and logs it to WandB."""
         plt.figure(figsize=(6, 6))
@@ -203,7 +204,7 @@ class DiffusionModel(LightningModule):
 
         plt.savefig(local_path, bbox_inches="tight")
         plt.close()
-        self.logger.experiment.log({wandb_name: [wandb.Image(local_path)]})
+        self.logger.experiment.log({wandb_name: [wandb.Image(local_path, caption=f"Epoch {self.current_epoch}")])]})
 
     def generate_pure_noise_samples(
         self,
@@ -253,16 +254,15 @@ class DiffusionModel(LightningModule):
             )
 
         clean_image = clean_images[0]
-        # save clean image
+
+        # Save original clean image
         self.save_image(
             clean_image,
-            path=os.path.join(
-                self.config.paths.sample_dir, f"{category}_clean.png"
-            ),
+            path=os.path.join(self.config.paths.sample_dir, f"{category}_clean.png"),
             wandb_name=f"{category}_clean",
         )
 
-        # Generate linearly spaced timesteps: 0, 49, 99, ..., 999
+        # Generate timesteps between 0 and max diffusion step
         timesteps = torch.tensor(
             np.linspace(
                 0,
@@ -272,22 +272,18 @@ class DiffusionModel(LightningModule):
             dtype=torch.int64,
             device=self.device,
         )
-        noises = torch.randn(
-            clean_image.shape, generator=self.generator, device=self.device
-        )
+        noises = torch.randn(clean_image.shape, generator=self.generator, device=self.device)
         noisy_images = []
 
         for idx, t in enumerate(timesteps):
             noisy_image = self.noise_scheduler.add_noise(clean_image, noises, t)
-            noisy_image_path = os.path.join(
-                getattr(self.config.paths.fixed_image_paths, category),
-                f"{category}_noisy_image_timestep_{t.item():03}.pt",
-            )
-
-            torch.save(noisy_image, noisy_image_path)
             noisy_images.append(noisy_image)
 
-        # save noisy images
+            noisy_image_path = getattr(self.config.paths.fixed_image_paths, category)
+            noisy_image_path = os.path.join(noisy_image_path, f"{category}_noisy_image_timestep_{t.item():03}.pt")
+            torch.save(noisy_image, noisy_image_path)
+
+        # Save noisy images
         self.save_images(
             noisy_images, timesteps, local_path, wandb_name=f"{category}_noisy"
         )
@@ -359,7 +355,7 @@ class DiffusionModel(LightningModule):
             or self.current_epoch % self.config.save_image_epochs == 0
             or self.current_epoch == self.config.num_epochs - 1
         ):
-            # Define the linearly spaced timesteps
+            # Define the timesteps
             fixed_timesteps = torch.tensor(
                 np.linspace(
                     0,

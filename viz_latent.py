@@ -5,17 +5,10 @@ import matplotlib.pyplot as plt
 import umap
 from tqdm import tqdm
 import dataset
-from config.config import LDMTrainingConfig
-# from models.AutoencoderKL_clf2_tanh import VAE
-# from models.AutoencoderKL_clf2 import VAE
-# from models.AutoencoderKL_clf2_sigmoid import VAE
-from models.AutoencoderKL_clf2_sigmoid_adaptive_clf_new import VAE
-# from models.AutoencoderKL import VAE
-# from models.AutoencoderKL_condition_2 import VAE
-# from models.AutoencoderKL_sigmoid import VAE
-# from models.AutoencoderKL_clf2_tanh import VAE
-
-from utils import transforms
+from models.VAE_after_sigmoid import VAE
+from models.CVAE_after_sigmoid import CVAE
+from config.parser import parse_arguments
+from utils import transforms, load_config_from_yaml
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print("device: ", device)
@@ -24,7 +17,10 @@ print("device: ", device)
 def load_vae_model(checkpoint_path, config):
     """Load a VAE model from a checkpoint."""
     print("Loading VAE model from:", checkpoint_path)
-    vae = VAE.load_from_checkpoint(checkpoint_path, config=config)
+    if config.cvae:
+        vae = CVAE.load_from_checkpoint(checkpoint_path, config=config)
+    else:
+        vae = VAE.load_from_checkpoint(checkpoint_path, config=config)
     vae.to(device)
     vae.eval()
     return vae
@@ -55,8 +51,17 @@ def visualize_latent_space(latents, labels, output_path):
     latents_2d = umap_reducer.fit_transform(latents)
 
     # Plot the UMAP projection
+    label_mapping = {0: 'SCD', 1: 'SWFD'}
+    unique_labels = np.unique(labels)
     plt.figure(figsize=(10, 8))
     scatter = plt.scatter(latents_2d[:, 0], latents_2d[:, 1], c=labels, cmap='viridis', alpha=0.7)
+
+    # Create a custom legend
+    handles = [plt.Line2D([0], [0], marker='o', color='w', markersize=10, markerfacecolor=scatter.cmap(scatter.norm(l))) 
+               for l in unique_labels]
+    plt.legend(handles, [label_mapping[l] for l in unique_labels], title="Domain Label")
+
+
     plt.colorbar(scatter, label="Domain Label")
     plt.title("UMAP Projection of Latent Space")
     plt.xlabel("UMAP Dimension 1")
@@ -69,33 +74,19 @@ def visualize_latent_space(latents, labels, output_path):
 
 
 if __name__ == "__main__":
-    # Settings
-    # vae_checkpoint_path = "/mydata/dlbirhoui/chia/checkpoints/vae/aekl_clf2_tanh/last.ckpt"
-    # vae_checkpoint_path = "/mydata/dlbirhoui/chia/checkpoints/vae/aekl_clf2/epoch=149-val_total_loss=0.0000.ckpt"
-    # vae_checkpoint_path = "/mydata/dlbirhoui/chia/checkpoints/vae/aekl_clf2_sigmoid/last.ckpt"
-    # vae_checkpoint_path = "/mydata/dlbirhoui/chia/checkpoints/vae/aekl_clf2_sigmoid_5000_fixed_lamda_dup/last.ckpt"
-    # vae_checkpoint_path = "/mydata/dlbirhoui/chia/checkpoints/vae/aekl_clf2_sigmoid_10000/last.ckpt"
-    # vae_checkpoint_path = "/mydata/dlbirhoui/chia/checkpoints/vae/aekl_clf2_sigmoid_new_5000/last.ckpt"
-    vae_checkpoint_path = "/mydata/dlbirhoui/chia/checkpoints/vae/aekl_clf2_sigmoid_new_1000/last.ckpt"
-    # vae_checkpoint_path = "/mydata/dlbirhoui/chia/checkpoints/vae/aekl_lpips_disc/last.ckpt"
-    # vae_checkpoint_path = "/mydata/dlbirhoui/chia/checkpoints/vae/aekl_lpips_disc_clf_adapt_smaller_weight_0.5/epoch=211-val_total_loss=0.0000.ckpt"
-    # vae_checkpoint_path = "/mydata/dlbirhoui/chia/checkpoints/vae/aekl_before_sigmoid/last.ckpt"
-    # vae_checkpoint_path = "/mydata/dlbirhoui/chia/checkpoints/vae/aekl_after_sigmoid/last.ckpt"
-    # vae_checkpoint_path = "/mydata/dlbirhoui/chia/checkpoints/vae/aekl_clf2_tanh_5000_fixed_lamda/last.ckpt"
-    # vae_checkpoint_path = "/mydata/dlbirhoui/chia/checkpoints/vae/aekl_clf2_tanh_5000/last.ckpt"
-
-    output_dir = "./latent_space_visualization"
+    # Initialize config
+    args = parse_arguments()
+    config = load_config_from_yaml(args.config_path)
+    output_dir = "./assets/latent_space_visualization"
     os.makedirs(output_dir, exist_ok=True)
 
-    # Initialize config
-    config = LDMTrainingConfig(batch_size=64)
-
     # Load VAE model
-    vae = load_vae_model(vae_checkpoint_path, config=config)
+    ckpt = os.path.join(config.paths.vae_ckpt_dir, "last.ckpt")
+    vae = load_vae_model(ckpt, config=config)
 
     # Load predefined indices for SCD and SWFD
-    indices_scd = np.load("/mydata/dlbirhoui/chia/oadat-ldm/config/scd_500px_blob_train_indices.npy")
-    indices_swfd = np.load("/mydata/dlbirhoui/chia/oadat-ldm/config/train_sc_BP_indices.npy")
+    indices_scd = np.load(config.dataset.scd_train_indices)
+    indices_swfd = np.load(config.dataset.swfd_train_indices)
 
     # Randomly pick 32 indices from each domain
     scd_indices = np.random.choice(indices_scd, 600, replace=False)
@@ -120,5 +111,5 @@ if __name__ == "__main__":
     labels = np.array([0] * len(scd_latents) + [1] * len(swfd_latents))  # 0 for SCD, 1 for SWFD
 
     # Visualize latent space
-    output_path = os.path.join(output_dir, "latent_space_umap.png")
+    output_path = os.path.join(output_dir, f"umap_{config.wandb.job_name}.png")
     visualize_latent_space(latents, labels, output_path)

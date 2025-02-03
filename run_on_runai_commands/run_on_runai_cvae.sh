@@ -1,1 +1,0 @@
-python train_cvae.py --oadat_dir /mydata/dlbirhoui/firat/OADAT --gpus 1 --config_path /mydata/dlbirhoui/chia/oadat-ldm/config/cvae.yaml

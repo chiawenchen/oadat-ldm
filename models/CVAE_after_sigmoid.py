@@ -14,7 +14,7 @@ from losses.LPIPSWithDiscriminator import LPIPSWithDiscriminator
 from models.LatentDomainClassifier import Classifier
 
 
-class VAE(LightningModule):
+class CVAE(LightningModule):
     """Variational Autoencoder (VAE) with LPIPS loss, discriminator and latent domain classification."""
 
     def __init__(self, config):
@@ -51,6 +51,22 @@ class VAE(LightningModule):
         self.classifier = Classifier(latent_channels=config.latent_channels)
         self.domain_clf_loss = nn.CrossEntropyLoss()
 
+        # Label projection layers
+        self.label_embedding = nn.Embedding(num_embeddings=config.num_classes, embedding_dim=config.latent_channels)
+        
+        self.label_scale = nn.Sequential(
+            nn.Linear(config.latent_channels, config.latent_channels),
+            nn.ReLU(),
+            nn.Linear(config.latent_channels, config.latent_channels),
+            nn.Sigmoid(),  # Ensures scale is positive (0 to 1)
+        )
+
+        self.label_shift = nn.Sequential(
+            nn.Linear(config.latent_channels, config.latent_channels),
+            nn.ReLU(),
+            nn.Linear(config.latent_channels, config.latent_channels),
+        )
+
     def get_last_layer(self):
         return self.vae.decoder.conv_out.weight
 
@@ -68,14 +84,27 @@ class VAE(LightningModule):
         print("- std: ", z_flat.std().item())
         print("- mean: ", z_flat.mean().item())
 
-    def forward(self, x: torch.Tensor):
+    def forward(self, x: torch.Tensor, labels: torch.Tensor):
         """
         Forward pass for the VAE. Encodes the input into latent space, passes through sigmoid and reconstructs it.
         """
-        latents = self.vae.encode(x).latent_dist.sample()
+        # Encode latents
+        posterior = self.vae.encode(x).latent_dist
+        latents = posterior.sample()
         latents = torch.sigmoid(latents)
-        reconstructed = self.vae.decode(latents).sample
-        return reconstructed, latents
+
+        # Project labels into the same space as latents
+        label_embeds = self.label_embedding(labels)  # (B, latent_channels)
+
+        # Compute scale & shift, then expand
+        scale = self.label_scale(label_embeds).unsqueeze(-1).unsqueeze(-1)  # (B, C, 1, 1)
+        shift = self.label_shift(label_embeds).unsqueeze(-1).unsqueeze(-1)  # (B, C, 1, 1)
+
+        # Apply feature-wise affine transformation
+        conditioned_latents = latents * scale + shift  # Broadcasting applies to (B, C, H, W)
+
+        reconstructed = self.vae.decode(conditioned_latents).sample
+        return reconstructed, latents, posterior
 
     def on_train_start(self):
         dataset_size = len(self.trainer.datamodule.train_dataloader())
@@ -91,18 +120,12 @@ class VAE(LightningModule):
         images, labels = batch
 
         # Encode and decode
-        posterior = self.vae.encode(images).latent_dist
-        latents = posterior.sample()
+        reconstructions, latents, posterior = self.forward(images, labels)
+
         # print latent's statistics
         if self.global_step % 300 == 0:
-            print("---- before sigmoid ----")
+            print("---- after sigmoid, before label condition ----")
             self.log_latent_statistics(latents)
-        latents = torch.sigmoid(latents)
-        if self.global_step % 300 == 0:
-            print("---- after sigmoid ----")
-            self.log_latent_statistics(latents)
-
-        reconstructions = self.vae.decode(latents).sample
 
         # Phase 1: Update Autoencoder (reconstruction + adversarial)
         if self.global_step % 2 == 0:
@@ -166,10 +189,7 @@ class VAE(LightningModule):
         images, labels = batch
 
         # Encode and decode
-        posterior = self.vae.encode(images).latent_dist
-        latents = posterior.sample()
-        latents = torch.sigmoid(latents)
-        reconstructions = self.vae.decode(latents).sample
+        reconstructions, latents, posterior = self.forward(images, labels)
 
         # Compute LPIPS loss
         aeloss, log_dict_ae = self.loss(
@@ -267,6 +287,8 @@ class VAE(LightningModule):
             val_iterator = iter(val_dataloader)
             swfd_images = []
             scd_images = []
+            swfd_labels = []
+            scd_labels = []
 
             for idx, batch in enumerate(val_iterator):
                 images, labels = batch
@@ -275,17 +297,22 @@ class VAE(LightningModule):
                 # Get 5 uncontinuous swfd images
                 if idx < 5:
                     swfd_images.append(image.unsqueeze(0))
+                    swfd_labels.append(label.unsqueeze(0))
                 # Get 5 uncontinuous scd images
                 if idx >= len(val_dataloader) - 5:
                     scd_images.append(image.unsqueeze(0))
+                    scd_labels.append(label.unsqueeze(0))
 
             # Combine images
             swfd_images = torch.cat(swfd_images, dim=0)
             scd_images = torch.cat(scd_images, dim=0)
+            swfd_labels = torch.cat(swfd_labels, dim=0)
+            scd_labels = torch.cat(scd_labels, dim=0)
             originals = torch.cat([swfd_images, scd_images], dim=0).to(self.device)
+            original_labels = torch.cat([swfd_labels, scd_labels], dim=0).to(self.device)
 
             # Generate reconstructions
-            reconstructed, _ = self.forward(originals)
+            reconstructed, _, _ = self.forward(originals, original_labels)
 
             # Plot and save the figure
             file_path = f"{self.config.paths.sample_dir}/validation_epoch_{self.current_epoch}.png"
@@ -302,3 +329,17 @@ class VAE(LightningModule):
                     )
                 }
             )
+
+            # Revert the labels
+            swapped_labels = torch.cat([scd_labels, swfd_labels], dim=0).to(self.device)
+            reconstructed, _, _ = self.forward(originals, swapped_labels)
+
+            file_path = f"{self.config.paths.sample_dir}/validation_epoch_{self.current_epoch}_swapped.png"
+            fig = self.plot(originals, reconstructed, n_images=10)
+            fig.savefig(file_path)
+            plt.close(fig)
+            
+            # Log the saved image to WandB
+            self.logger.experiment.log({
+                "Original vs Reconstructed - Swapped Labels": wandb.Image(file_path, caption=f"Epoch {self.current_epoch}: Originals (Top) vs Reconstructed (Bottom)")
+            })

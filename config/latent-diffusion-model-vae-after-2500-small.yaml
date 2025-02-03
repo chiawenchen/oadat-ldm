@@ -1,0 +1,53 @@
+training_config:
+  # General training settings
+  image_size: 256
+  batch_size: 128
+  num_epochs: 200
+  num_workers: 4
+  learning_rate: 0.0001
+  lr_warmup_epochs: 5
+  save_image_epochs: 5
+  seed: 42
+  sample_num: 11
+
+  # Diffusion model settings
+  num_train_timesteps: 1000
+  noise_schedule: "cosine_dark"
+
+  # Latent diffusion model settings
+  latent:
+  latent_channels: 3
+  latent_size: 32
+  num_down_blocks: 4
+  num_up_blocks: 4
+  num_classes: 2
+  layers_per_block: 2
+  block_out_channels: [32, 64, 64, 128]
+
+  # Paths and directories
+  paths:
+    output_dir: "/mydata/dlbirhoui/chia/"
+    sample_dir: "/mydata/dlbirhoui/chia/samples/latent-diffusion-model"
+    fixed_image_paths:
+      swfd: "/mydata/dlbirhoui/chia/samples/latent-diffusion-model/swfd_fixed_noisy_images"
+      scd: "/mydata/dlbirhoui/chia/samples/latent-diffusion-model/scd_fixed_noisy_images"
+    vae_ckpt_dir: "/mydata/dlbirhoui/chia/checkpoints/all/vae_after_2500/last.ckpt"
+    vae_config_path: "/mydata/dlbirhoui/chia/oadat-ldm/config/vae_after_2500.yaml"
+
+  # Logging and monitoring
+  wandb:
+    project_name: "sem-proj-latent-diffusion-model"
+    job_name: "ldm-vae-after-2500"
+
+ # Dataset and training strategy
+  dataset:
+    scd_train_indices: "/mydata/dlbirhoui/chia/oadat-ldm/config/scd_500px_blob_train_indices.npy"
+    swfd_train_indices: "/mydata/dlbirhoui/chia/oadat-ldm/config/train_sc_BP_indices.npy"
+    mix_swfd_scd: false  # Set to False to use swfd data only
+
+  checkpointing:
+    save_top_k: 3 
+    monitor_metric: "val_loss"
+    monitor_mode: "min"
+    save_last: true
+    filename_format: "{epoch:02d}-{val_loss:.4f}"

@@ -1,20 +1,18 @@
-fimport os
+import os
 import torch
 import numpy as np
 from lightning.pytorch import Trainer
 from lightning.pytorch.callbacks import ModelCheckpoint, ModelSummary
 from lightning.pytorch.loggers import WandbLogger
 from datamodule import OADATDataModule
-from config.config3 import LDMTrainingConfig, parse_arguments
-from models.LDM_5_scale_sigmoid_minus1to1 import LatentDiffusionModel
-from models.LDM_condition import ConditionalLatentDiffusionModel
+from config.parser import parse_arguments
+from models.LDMWithCVAE import LDMWithCVAE
+from models.LDM import LDM
+from models.CVAE_after_sigmoid import CVAE
+from models.VAE import VAE
+from utils import get_last_checkpoint, get_named_beta_schedule, load_config_from_yaml
 
-# from models.VAE import VAE
-from models.AutoencoderKL_clf2_sigmoid import VAE
-from utils import get_last_checkpoint, get_named_beta_schedule
-
-
-# the precision settings for matrix multiplications
+# Set precision for matrix multiplications
 torch.set_float32_matmul_precision("medium")
 
 
@@ -22,65 +20,67 @@ def main() -> None:
     # Parse command-line arguments
     args = parse_arguments()
 
-    # Set up training configuration
-    config = LDMTrainingConfig(
-        num_epochs=args.num_epochs,
-        batch_size=args.batch_size,
-    )
+    # Load training configuration from YAML as a dot-accessible object
+    config = load_config_from_yaml(args.config_path)
+    vae_config = load_config_from_yaml(config.paths.vae_config_path)
 
+    # Load dataset indices
+    if not os.path.exists(config.dataset.scd_train_indices):
+        raise FileNotFoundError(f"Dataset file not found: {config.dataset.scd_train_indices}")
+    if not os.path.exists(config.dataset.swfd_train_indices):
+        raise FileNotFoundError(f"Dataset file not found: {config.dataset.swfd_train_indices}")
 
-    if args.condition_ldm or args.condition_vae:
-        return_labels = True
-    else:
-        return_labels = False
+    scd_train_indices = np.load(config.dataset.scd_train_indices)
+    swfd_train_indices = np.load(config.dataset.swfd_train_indices)
 
-    # Set up data module
-    indices_scd = np.load("/mydata/dlbirhoui/chia/oadat-ldm/config/scd_500px_blob_train_indices.npy")
-    indices_swfd = np.load("/mydata/dlbirhoui/chia/oadat-ldm/config/train_sc_BP_indices.npy")
+    # Initialize data module
     datamodule = OADATDataModule(
-        data_path=args.oadat_dir,
-        batch_size=args.batch_size,
-        num_workers=args.num_workers,
-        mix_swfd_scd=args.mix_swfd_scd,
-        indices_swfd=indices_swfd,
-        indices_scd=indices_scd,
-        return_labels=return_labels
+        data_path=args.oadat_dir,  # Using CLI argument
+        batch_size=config.batch_size,
+        num_workers=config.num_workers,
+        mix_swfd_scd=config.dataset.mix_swfd_scd,
+        indices_scd=scd_train_indices,
+        indices_swfd=swfd_train_indices,
+        return_labels=vae_config.cvae
     )
 
+    # Set up sample and fixed noisy image directories
+    os.makedirs(config.paths.sample_dir, exist_ok=True)
+    os.makedirs(config.paths.fixed_image_paths.swfd, exist_ok=True)
+    os.makedirs(config.paths.fixed_image_paths.scd, exist_ok=True)
+    
     # Set up noise scheduler
-    noise_scheduler = get_named_beta_schedule(args.noise_schedule, config.num_train_timesteps)
+    noise_scheduler = get_named_beta_schedule(
+        config.noise_schedule.lower(), config.num_train_timesteps
+    )
 
-    # Set up sample image saving path
-    sample_dir = os.path.join(config.output_dir, "samples", args.job_name)
-    os.makedirs(sample_dir, exist_ok=True)
-    config.sample_dir = sample_dir
-
-    # Initialize the model
-    vae = VAE.load_from_checkpoint(config.vae_ckpt_dir, config=config)
-    if args.condition_ldm == True:        
-        model = ConditionalLatentDiffusionModel(config=config, noise_scheduler=noise_scheduler, vae=vae)
+    # Initialize VAE and Latent Diffusion Model
+    if vae_config.cvae:
+        vae = CVAE.load_from_checkpoint(os.path.join(vae_config.paths.vae_ckpt_dir, "last.ckpt"), config=vae_config)
+        ldm = LDMWithCVAE(config=config, noise_scheduler=noise_scheduler, vae=vae)
     else:
-        model = LatentDiffusionModel(config=config, noise_scheduler=noise_scheduler, vae=vae)
+        vae = VAE.load_from_checkpoint(os.path.join(vae_config.paths.vae_ckpt_dir, "last.ckpt"), config=vae_config)
+        ldm = LDM(config=config, noise_scheduler=noise_scheduler, vae=vae)
 
-    # Set up logger
+    # Set up WandB logger
     logger = WandbLogger(
-        project="latent-diffusion",
-        name=args.job_name,
+        project=config.wandb.project_name,
+        name=config.wandb.job_name,
         log_model=False,
-        config=config.__dict__,
+        config=vars(config),
     )
 
     # Set up checkpoint callback
-    ckpt_dir = os.path.join(config.output_dir, "checkpoints", args.job_name)
+    ckpt_dir = os.path.join(config.paths.output_dir, "checkpoints", "all", config.wandb.job_name)
     os.makedirs(ckpt_dir, exist_ok=True)
     checkpoint_callback = ModelCheckpoint(
         dirpath=ckpt_dir,
-        save_top_k=3,
-        monitor="val_loss",
-        mode="min",
+        save_top_k=config.checkpointing.save_top_k,
+        monitor=config.checkpointing.monitor_metric,
+        mode=config.checkpointing.monitor_mode,
         save_weights_only=False,
-        save_last=True,
-        filename="{epoch:02d}-{val_loss:.4f}",
+        save_last=config.checkpointing.save_last,
+        filename=config.checkpointing.filename_format,
     )
 
     # Set up Trainer
@@ -89,21 +89,21 @@ def main() -> None:
         accelerator="auto",
         devices=args.gpus,
         logger=logger,
-        callbacks=[checkpoint_callback, ModelSummary(max_depth=2)], # depth=-1 for full summary
+        callbacks=[checkpoint_callback, ModelSummary(max_depth=2)],
         log_every_n_steps=50,
         check_val_every_n_epoch=1,
         num_sanity_val_steps=0,
     )
 
     # Load the latest checkpoint if available
-    latest_ckpt = get_last_checkpoint(ckpt_dir)
+    latest_ckpt = get_last_checkpoint(config.paths.vae_ckpt_dir)
     if latest_ckpt:
         print(f"Resuming training from checkpoint: {latest_ckpt}")
+        trainer.fit(ldm, datamodule, ckpt_path=latest_ckpt)
     else:
         print("No checkpoint found, starting from scratch.")
+        trainer.fit(ldm, datamodule)
 
-    # Train the model
-    trainer.fit(model, datamodule, ckpt_path=latest_ckpt)
 
 if __name__ == "__main__":
     main()

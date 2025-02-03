@@ -13,36 +13,18 @@ import matplotlib.pyplot as plt
 import math
 from models.VAE import VAE
 
-class LatentDiffusionModel(LightningModule):
+class LDM(LightningModule):
     def __init__(self, config: dict, noise_scheduler: DDIMScheduler, vae: VAE) -> None:
         super().__init__()
         self.sample_size = config.image_size // 2 ** (config.num_down_blocks - 1)
         self.in_channels = config.latent_channels
         self.out_channels = self.in_channels
         self.config = config
-        self.vae = vae
-        self.model = UNet2DModel(
-            sample_size=self.sample_size,
-            in_channels=self.in_channels,
-            out_channels=self.out_channels,
-            layers_per_block=self.config.layers_per_block,
-            center_input_sample=False,
-            block_out_channels=self.config.block_out_channels
-            down_block_types=(
-                "DownBlock2D",
-                "DownBlock2D",
-                "DownBlock2D",
-                "AttnDownBlock2D",
-            ),
-            up_block_types=(
-                "AttnUpBlock2D",
-                "UpBlock2D",
-                "UpBlock2D",
-                "UpBlock2D",
-            ),
-        )
         self.noise_scheduler = noise_scheduler
         self.loss_fn = F.mse_loss
+        self.vae = vae
+
+        # Example input for visualization
         self.example_input_array = (
             torch.randn(
                 self.config.batch_size,
@@ -56,20 +38,121 @@ class LatentDiffusionModel(LightningModule):
         )
         self.generator = None
 
-        # Freeze the VAE parameters
+        # Initialize UNet Model for the diffusion process
+        self.model = self._build_unet()
+
+        # Freeze the VAE parameters to keep the encoder/decoder static
         for param in self.vae.parameters():
             param.requires_grad = False
 
+    def _build_unet(self) -> UNet2DModel:
+        """Builds and returns the UNet model used for diffusion."""
+        return UNet2DModel(
+            sample_size=self.sample_size,
+            in_channels=self.in_channels,
+            out_channels=self.out_channels,
+            layers_per_block=self.config.layers_per_block,
+            center_input_sample=False,
+            block_out_channels=self.config.block_out_channels,
+            down_block_types=(
+                "DownBlock2D",
+                "DownBlock2D",
+                "DownBlock2D",
+                "AttnDownBlock2D",
+            ),
+            up_block_types=(
+                "AttnUpBlock2D",
+                "UpBlock2D",
+                "UpBlock2D",
+                "UpBlock2D",
+            ),
+        )
 
     def forward(self, x: torch.Tensor, timesteps: torch.Tensor) -> torch.Tensor:
+        """Performs a forward pass through the UNet model."""
         return self.model(x, timesteps)
 
-    def save_clean_image(
+    def configure_optimizers(
+        self,
+    ) -> tuple[
+        list[torch.optim.Optimizer], list[torch.optim.lr_scheduler._LRScheduler]
+    ]:
+        # Optimize only the diffusion model parameters
+        optimizer = torch.optim.AdamW(self.model.parameters(), lr=self.config.learning_rate)
+        lr_scheduler = LinearLR(
+            optimizer, total_iters=self.config.lr_warmup_epochs, last_epoch=-1
+        )
+        return [optimizer], [lr_scheduler]
+
+    def training_step(self, batch: torch.Tensor, batch_idx: int) -> torch.Tensor:
+        posterior = self.vae.vae.encode(batch).latent_dist
+        latents = torch.sigmoid(posterior.sample()) * 2.0 - 1.0
+        noises = torch.randn(latents.shape, device=self.device)
+        timesteps = torch.randint(
+            0,
+            self.noise_scheduler.config.num_train_timesteps,
+            (batch.shape[0],),
+            device=self.device,
+            dtype=torch.int64,
+        )
+
+        noisy_latents = self.noise_scheduler.add_noise(latents, noises, timesteps)
+        predicted_v = self(noisy_latents, timesteps).sample
+
+        # Compute ground truth v
+        alpha_t = self.noise_scheduler.alphas_cumprod[timesteps].sqrt().view(-1, 1, 1, 1)
+        sigma_t = (1 - self.noise_scheduler.alphas_cumprod[timesteps]).sqrt().view(-1, 1, 1, 1)
+        ground_truth_v = alpha_t * noises - sigma_t * latents
+
+        # Compute loss
+        loss = self.loss_fn(predicted_v, ground_truth_v)
+        self.log("train_loss", loss, on_step=False, on_epoch=True, prog_bar=True)
+
+        # Log learning rate
+        lr = self.optimizers().param_groups[0]["lr"]
+        self.log("lr", lr, on_step=False, on_epoch=True, prog_bar=True)
+
+        return loss
+
+    def validation_step(self, batch: torch.Tensor, batch_idx: int) -> torch.Tensor:
+        posterior = self.vae.vae.encode(batch).latent_dist
+        latents = torch.sigmoid(posterior.sample()) * 2.0 - 1.0
+
+        # Fix generator during validation to ensure the noise is always the same
+        noises = torch.randn(
+            latents.shape, generator=self.generator, device=self.device
+        )
+        timesteps = torch.randint(
+            0,
+            self.noise_scheduler.config.num_train_timesteps,
+            (batch.shape[0],),
+            dtype=torch.int64,
+            generator=self.generator,
+            device=self.device,
+        )
+
+        noisy_latents = self.noise_scheduler.add_noise(latents, noises, timesteps)
+        predicted_v = self(noisy_latents, timesteps).sample
+
+        # Compute ground truth
+        alpha_t = self.noise_scheduler.alphas_cumprod[timesteps].sqrt().view(-1, 1, 1, 1)
+        sigma_t = (1 - self.noise_scheduler.alphas_cumprod[timesteps]).sqrt().view(-1, 1, 1, 1)
+        ground_truth_v = alpha_t * noises - sigma_t * latents
+
+        # Compute loss
+        val_loss = self.loss_fn(predicted_v, ground_truth_v)
+        self.log("val_loss", val_loss, on_step=False, on_epoch=True, prog_bar=True)
+
+        return val_loss
+
+### Below is for debugging and visualization at the end of every n epochs ###
+    def save_image(
         self,
         image: torch.Tensor,
         local_path: str,
         wandb_name: str,
     ) -> None:
+        """Saves a single grayscale image locally and logs it to WandB."""
         plt.figure(figsize=(6, 6))
         im = plt.imshow(image.squeeze(0).cpu().detach().numpy(), cmap="gray", vmin=-1.0, vmax=1.0)
         plt.colorbar(im)
@@ -85,18 +168,15 @@ class LatentDiffusionModel(LightningModule):
         wandb_name: str = "wandb_name",
         transform_back: bool = False,
     ) -> None:
+        """Saves multiple images as a grid and logs them to WandB."""
         if transform_back:
-            # check if the image has NaN or Inf values
+            # Ensure no NaN or Inf values exist in the images
             for img in images:
                 if torch.any(torch.isinf(img)) or torch.any(torch.isnan(img)):
                     print(f"Image contains NaN or Inf values.")
                     img[torch.isnan(img)] = 0
                     img[torch.isinf(img)] = 0
-
-            images = [
-                torch.clamp(((torch.clamp(img, min=-1.0, max=1.0) + 1.0) * 1.2 / 2.0) - 0.2, min=-0.2, max=1)
-                for img in images
-            ]
+            images = [torch.clamp(((torch.clamp(img, min=-1.0, max=1.0) + 1.0) * 1.2 / 2.0) - 0.2, min=-0.2, max=1) for img in images]
 
         num_images = len(images)
         num_rows = 2
@@ -105,16 +185,11 @@ class LatentDiffusionModel(LightningModule):
             num_rows, num_cols, figsize=(num_cols * 5, num_rows * 5)
         )
         axs = axs.ravel()
+
         for i, img in enumerate(images):
             ax = axs[i] if num_images > 1 else axs
             if transform_back:
-                im = ax.imshow(
-                    img.squeeze(0).cpu().detach().numpy(),
-                    cmap="gray",
-                    aspect="equal",
-                    vmin=-0.2,
-                    vmax=1.0,
-                )
+                im = ax.imshow(img.squeeze(0).cpu().detach().numpy(), cmap="gray", aspect="equal", vmin=-0.2, vmax=1.0)
             else:
                 im = ax.imshow(img.squeeze(0).cpu().detach().numpy(), cmap="gray", aspect="equal")
             ax.axis("off")
@@ -128,10 +203,9 @@ class LatentDiffusionModel(LightningModule):
         plt.close()
         self.logger.experiment.log({wandb_name: [wandb.Image(local_path, caption=f"Epoch {self.current_epoch}")]})
 
-    def generate_fixed_noisy_images(self, category: str) -> None:
-        local_path = os.path.join(self.config.sample_dir, f"{category}_noisy.png")
-        # if os.path.exists(local_path):
-        #     return
+    def generate_noisy_samples(self, category: str) -> None:
+        """Generates noisy samples from clean images using the diffusion process."""
+        local_path = os.path.join(self.config.paths.sample_dir, f"{category}_noisy.png")
         if category == "swfd":
             clean_images = next(iter(self.trainer.datamodule.val_dataloader())).to(
                 self.device
@@ -142,23 +216,24 @@ class LatentDiffusionModel(LightningModule):
             )
 
         clean_image = clean_images[0]
-        # save clean image
-        self.save_clean_image(
+        # Save original clean image
+        self.save_image(
             clean_image,
-            local_path=os.path.join(self.config.sample_dir, f"{category}_clean.png"),
+            local_path=os.path.join(self.config.paths.sample_dir, f"{category}_clean.png"),
             wandb_name=f"{category}_clean",
         )
 
+        # Encode and reconstruct the clean image through VAE
         reconstructed, _ = self.vae.forward(clean_image.unsqueeze(0))
 
-        # save clean image
-        self.save_clean_image(
+        # Save reconstructed clean image
+        self.save_image(
             reconstructed.squeeze(0),
-            local_path=os.path.join(self.config.sample_dir, f"{category}_clean_reconstructed.png"),
+            local_path=os.path.join(self.config.paths.sample_dir, f"{category}_clean_reconstructed.png"),
             wandb_name=f"{category}_clean_reconstructed",
         )
 
-        # Generate linearly spaced timesteps: 0, 49, 99, ..., 999
+        # Generate timesteps between 0 and max diffusion step
         timesteps = torch.tensor(
             np.linspace(
                 0,
@@ -169,160 +244,38 @@ class LatentDiffusionModel(LightningModule):
             device=self.device,
         )
         posterior = self.vae.vae.encode(clean_image.unsqueeze(0)).latent_dist
-        z = posterior.sample()
-        z_flat = z.flatten()
-        print(f"----------After Encoding - Raw Latent-----------")
-        print('min: ', z_flat.min().item())
-        print('q25: ', torch.quantile(z_flat, 0.25).item())
-        print('q50: ', torch.quantile(z_flat, 0.50).item())
-        print('q75: ', torch.quantile(z_flat, 0.75).item())
-        print('max: ', z_flat.max().item())
-        print('- std: ', z_flat.std().item())
-        print('- mean: ', z_flat.mean().item())
-        print(" ")
-        z = torch.sigmoid(z)
-        z_flat = z.flatten()
-        print(f"----------After Encoding - Sigmoid Latent-----------")
-        print('min: ', z_flat.min().item())
-        print('q25: ', torch.quantile(z_flat, 0.25).item())
-        print('q50: ', torch.quantile(z_flat, 0.50).item())
-        print('q75: ', torch.quantile(z_flat, 0.75).item())
-        print('max: ', z_flat.max().item())
-        print('- std: ', z_flat.std().item())
-        print('- mean: ', z_flat.mean().item())
-        print(" ")
-        z = z * 2.0 - 1.0
-        z_flat = z.flatten()
-        print(f"----------After Encoding - Sigmoid and Shift Latent-----------")
-        print('min: ', z_flat.min().item())
-        print('q25: ', torch.quantile(z_flat, 0.25).item())
-        print('q50: ', torch.quantile(z_flat, 0.50).item())
-        print('q75: ', torch.quantile(z_flat, 0.75).item())
-        print('max: ', z_flat.max().item())
-        print('- std: ', z_flat.std().item())
-        print('- mean: ', z_flat.mean().item())
-        print(" ")
-        
-        noises = torch.randn(
-            z.shape, generator=self.generator, device=self.device
-        )
+
+        z = torch.sigmoid(posterior.sample()) * 2.0 - 1.0
+        noises = torch.randn(z.shape, generator=self.generator, device=self.device)
 
         noisy_latents = []
         for idx, t in enumerate(timesteps):
-            # create noisy latents
             noisy_latent = self.noise_scheduler.add_noise(z, noises, t).squeeze(0)
             noisy_latents.append(noisy_latent)
 
-            # save locally
-            path = f"{self.config.sample_dir}/{category}_fixed_noisy_images"
-            os.makedirs(path, exist_ok=True)
-            noisy_latent_path = os.path.join(path, f"{category}_noisy_image_timestep_{t.item():03}.pt",)
+            noisy_latent_path = getattr(self.config.paths.fixed_image_paths, category) 
+            noisy_latent_path = os.path.join(noisy_latent_path, f"{category}_noisy_image_timestep_{t.item():03}.pt",)
             torch.save(noisy_latent, noisy_latent_path)
-
-    def configure_optimizers(
-        self,
-    ) -> tuple[
-        list[torch.optim.Optimizer], list[torch.optim.lr_scheduler._LRScheduler]
-    ]:
-        # Optimize only the diffusion model parameters
-        optimizer = torch.optim.AdamW(self.model.parameters(), lr=self.config.learning_rate)
-        lr_scheduler = LinearLR(
-            optimizer, total_iters=self.config.lr_warmup_epochs, last_epoch=-1
-        )
-        return [optimizer], [lr_scheduler]
 
     def on_train_start(self) -> None:
         print("on_train_start")
         self.generator = torch.Generator(device=self.device)
         self.generator.manual_seed(self.config.seed)
-        self.generate_fixed_noisy_images("swfd")
-        self.generate_fixed_noisy_images("scd")
+        # Generate some samples for debugging and visualization
+        self.generate_noisy_samples("swfd")
+        self.generate_noisy_samples("scd")
 
-    def training_step(self, batch: torch.Tensor, batch_idx: int) -> torch.Tensor:
-        bs = batch.shape[0]
-        posterior = self.vae.vae.encode(batch).latent_dist
-        latents = posterior.sample()
-        latents = torch.sigmoid(latents)
-        latents = latents * 2.0 - 1.0
-        noises = torch.randn(latents.shape, device=self.device)
-        # generates a tensor of random integers (timesteps) ranging from 0 to num_train_timesteps - 1 for each image in the batch
-        timesteps = torch.randint(
-            0,
-            self.noise_scheduler.config.num_train_timesteps,
-            (bs,),
-            device=self.device,
-            dtype=torch.int64,
-        )
-
-        # By sampling random timesteps for each image, the model gradually learns to predict the noise at all stages of the diffusion process (from slightly noisy images to very noisy ones)
-        noisy_latents = self.noise_scheduler.add_noise(latents, noises, timesteps)
-
-        # Predict v instead of noise
-        predicted_v = self(noisy_latents, timesteps).sample
-
-        # Convert ground truth noise (noises) to v
-        alpha_t = self.noise_scheduler.alphas_cumprod[timesteps].sqrt().view(-1, 1, 1, 1)
-        sigma_t = (1 - self.noise_scheduler.alphas_cumprod[timesteps]).sqrt().view(-1, 1, 1, 1)
-        ground_truth_v = alpha_t * noises - sigma_t * latents
-
-        # Compute loss
-        loss = self.loss_fn(predicted_v, ground_truth_v)
-        self.log("train_loss", loss, on_step=False, on_epoch=True, prog_bar=True)
-
-        lr = self.optimizers().param_groups[0]["lr"]
-        self.log("lr", lr, on_step=False, on_epoch=True, prog_bar=True)
-
-        return loss
-
-    def validation_step(self, batch: torch.Tensor, batch_idx: int) -> torch.Tensor:
-        # fixed seed during validation to ensure the noise is always the same
-        bs = batch.shape[0]
-        posterior = self.vae.vae.encode(batch).latent_dist
-        latents = posterior.sample()
-        latents = torch.sigmoid(latents)
-        latents = latents * 2.0 - 1.0
-        noises = torch.randn(
-            latents.shape, generator=self.generator, device=self.device
-        )
-        timesteps = torch.randint(
-            0,
-            self.noise_scheduler.config.num_train_timesteps,
-            (bs,),
-            dtype=torch.int64,
-            generator=self.generator,
-            device=self.device,
-        )
-
-        noisy_latents = self.noise_scheduler.add_noise(latents, noises, timesteps)
-        # Predict v instead of noise
-        predicted_v = self(noisy_latents, timesteps).sample
-
-        # Convert ground truth noise (noises) to v
-        alpha_t = self.noise_scheduler.alphas_cumprod[timesteps].sqrt().view(-1, 1, 1, 1)
-        sigma_t = (1 - self.noise_scheduler.alphas_cumprod[timesteps]).sqrt().view(-1, 1, 1, 1)
-        ground_truth_v = alpha_t * noises - sigma_t * latents
-
-        # Compute loss
-        val_loss = self.loss_fn(predicted_v, ground_truth_v)
-        self.log("val_loss", val_loss, on_step=False, on_epoch=True, prog_bar=True)
-
-        return val_loss
 
     def get_fixed_noisy_images(self, category: str) -> torch.Tensor:
-
-        path = f"{self.config.sample_dir}/{category}_fixed_noisy_images"
+        path = getattr(self.config.paths.fixed_image_paths, category) 
         filenames = sorted(os.listdir(path))
 
         # Load all noisy images and stack them into a single tensor
         noisy_images = torch.stack(
-            [
-                torch.load(path + "/" + filename, weights_only=True).to(self.device)
-                for filename in filenames
-            ]
+            [ torch.load(path + "/" + filename, weights_only=True).to(self.device) for filename in filenames ]
         )
         return noisy_images
 
-    # Predicts denoised images, and saves them in WandB and locally
     def denoise_and_save_samples(
         self,
         category: str,
@@ -330,6 +283,7 @@ class LatentDiffusionModel(LightningModule):
         timesteps: torch.Tensor,
         epoch: int,
     ) -> None:
+        """Performs iterative denoising and saves results."""
         self.noise_scheduler.set_timesteps(
             num_inference_steps=self.noise_scheduler.config.num_train_timesteps
         )
@@ -356,7 +310,6 @@ class LatentDiffusionModel(LightningModule):
                 # Update denoised images
                 denoised_latents[active_mask] = torch.stack(step_result)
 
-        # decode from latent space to image space
         for idx, latent in enumerate(denoised_latents):
             print(f"----------After Denoising - Image: {idx}-----------")
             latent_flatten = latent.flatten()
@@ -369,6 +322,7 @@ class LatentDiffusionModel(LightningModule):
             print('mean: ', latent_flatten.mean().item())
             print(" ")
 
+        # Decode from latent space to image space
         denoised_latents = (denoised_latents + 1.0) / 2.0
         denoised_images = self.vae.vae.decode(denoised_latents).sample
 
@@ -376,19 +330,18 @@ class LatentDiffusionModel(LightningModule):
         self.save_images(
             denoised_images,
             timesteps,
-            local_path=os.path.join(self.config.sample_dir, f"{category}_epoch_{epoch}_denoised.png"),
+            local_path=os.path.join(self.config.paths.sample_dir, f"{category}_epoch_{epoch}_denoised.png"),
             wandb_name=f"{category} denoised",
             transform_back=True,
         )
 
     def on_validation_epoch_end(self) -> None:
-        print("on_validation_epoch_end")
         if (
             self.current_epoch == 0
             or self.current_epoch % self.config.save_image_epochs == 0
             or self.current_epoch == self.config.num_epochs - 1
         ):
-            # Define the linearly spaced timesteps
+            # Define the timesteps
             fixed_timesteps = torch.tensor(
                 np.linspace(
                     0,

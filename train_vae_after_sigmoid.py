@@ -1,21 +1,25 @@
-# train_diffusion.py: Training script for vanilla diffusion model
 import os
-import torch
 import numpy as np
-from config.parser import parse_arguments
-from datamodule import OADATDataModule
-from models.DDIM import DiffusionModel
-from utils import get_last_checkpoint, get_named_beta_schedule, load_config_from_yaml
-from lightning.pytorch import Trainer
-from lightning.pytorch.callbacks import ModelCheckpoint, ModelSummary
+import wandb
+from lightning.pytorch import Trainer, LightningModule, LightningDataModule
 from lightning.pytorch.loggers import WandbLogger
-from diffusers import DDIMScheduler
+from lightning.pytorch.callbacks import ModelCheckpoint
+import torch
+from torch.utils.data import DataLoader
+from torchvision.transforms import v2
+from config.parser import parse_arguments
+from utils import get_last_checkpoint, get_named_beta_schedule, load_config_from_yaml
+import dataset
+from datamodule import OADATDataModule
+
+from models.VAE_after_sigmoid import VAE
+from models.CVAE_after_sigmoid import CVAE
 
 # Set precision for matrix multiplications
 torch.set_float32_matmul_precision("medium")
 
 
-def main() -> None:
+def main():
     # Parse command-line arguments
     args = parse_arguments()
 
@@ -38,22 +42,18 @@ def main() -> None:
         num_workers=config.num_workers,
         mix_swfd_scd=config.dataset.mix_swfd_scd,
         indices_scd=scd_train_indices,
-        indices_swfd=swfd_train_indices
+        indices_swfd=swfd_train_indices,
+        return_labels=config.use_domain_classifier
     )
 
     # Set up sample and fixed noisy image directories
     os.makedirs(config.paths.sample_dir, exist_ok=True)
-    os.makedirs(config.paths.fixed_image_paths.swfd, exist_ok=True)
-    os.makedirs(config.paths.fixed_image_paths.scd, exist_ok=True)
-    os.makedirs(config.paths.fixed_image_paths.prepicked_noise, exist_ok=True)
 
-    # Set up noise scheduler
-    noise_scheduler = get_named_beta_schedule(
-        config.noise_schedule.lower(), config.num_train_timesteps
-    )
-
-    # Initialize the diffusion model
-    model = DiffusionModel(config=config, noise_scheduler=noise_scheduler)
+    # Initialize the VAE
+    if config.cvae:
+        model = CVAE(config=config)
+    else:
+        model = VAE(config=config)
 
     # Set up WandB logger
     logger = WandbLogger(
@@ -64,10 +64,9 @@ def main() -> None:
     )
 
     # Set up checkpoint callback
-    ckpt_dir = os.path.join(config.paths.output_dir, "checkpoints", "all", config.wandb.job_name)
-    os.makedirs(ckpt_dir, exist_ok=True)
+    os.makedirs(config.paths.vae_ckpt_dir, exist_ok=True)
     checkpoint_callback = ModelCheckpoint(
-        dirpath=ckpt_dir,
+        dirpath=config.paths.vae_ckpt_dir,
         save_top_k=config.checkpointing.save_top_k,
         monitor=config.checkpointing.monitor_metric,
         mode=config.checkpointing.monitor_mode,
@@ -84,15 +83,14 @@ def main() -> None:
         logger=logger,
         callbacks=[
             checkpoint_callback,
-            ModelSummary(max_depth=2),
         ],
         log_every_n_steps=50,
         check_val_every_n_epoch=1,
-        num_sanity_val_steps=0,
+        num_sanity_val_steps=1,
     )
 
     # Load the latest checkpoint if available
-    latest_ckpt = get_last_checkpoint(ckpt_dir)
+    latest_ckpt = get_last_checkpoint(config.paths.vae_ckpt_dir)
     if latest_ckpt:
         print(f"Resuming training from checkpoint: {latest_ckpt}")
         trainer.fit(model, datamodule, ckpt_path=latest_ckpt)
