@@ -204,7 +204,7 @@ class DiffusionModel(LightningModule):
 
         plt.savefig(local_path, bbox_inches="tight")
         plt.close()
-        self.logger.experiment.log({wandb_name: [wandb.Image(local_path, caption=f"Epoch {self.current_epoch}")])]})
+        self.logger.experiment.log({wandb_name: [wandb.Image(local_path, caption=f"Epoch {self.current_epoch}")]})
 
     def generate_pure_noise_samples(
         self,

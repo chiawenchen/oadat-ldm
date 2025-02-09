@@ -40,4 +40,3 @@ training_config:
 
   # Paths and directories
   ckpt_dir: "/mydata/dlbirhoui/chia/checkpoints/all/classifier-guidance"
-  vae
