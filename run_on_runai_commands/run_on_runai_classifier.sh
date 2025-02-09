@@ -1,1 +1,1 @@
-python train_classifier.py --oadat_dir /mydata/dlbirhoui/firat/OADAT --gpus 1 --config_path /mydata/dlbirhoui/chia/oadat-ldm/config/classifier-guidance.yaml
+python train_classifier_ldm.py --oadat_dir /mydata/dlbirhoui/firat/OADAT --gpus 1 --config_path /mydata/dlbirhoui/chia/oadat-ldm/config/classifier-guidance-cvae_after_5000.yaml

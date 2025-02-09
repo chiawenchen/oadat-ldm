@@ -37,7 +37,7 @@ training_config:
   # Logging and monitoring
   wandb:
     project_name: "sem-proj-latent-diffusion-model"
-    job_name: "ldm-vae-after-2500"
+    job_name: "ldm-vae-after-2500-small"
 
  # Dataset and training strategy
   dataset:

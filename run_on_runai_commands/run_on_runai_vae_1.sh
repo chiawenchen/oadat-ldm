@@ -1,1 +1,0 @@
-python train_vae_after_sigmoid.py --oadat_dir /mydata/dlbirhoui/firat/OADAT --gpus 1 --config_path /mydata/dlbirhoui/chia/oadat-ldm/config/vae_after_2500.yaml

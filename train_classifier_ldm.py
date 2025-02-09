@@ -21,7 +21,8 @@ from utils import (
     transforms,
 )
 import dataset
-
+from models.VAE_after_sigmoid import VAE
+from models.CVAE_after_sigmoid import CVAE
 from models.UnetClassifier import UnetAttentionClassifier
 
 # Set precision for matrix multiplications
@@ -37,12 +38,14 @@ class NoisyDataset(dataset.Dataset):
         inds,
         noise_scheduler,
         label,
+        vae,  # Pass the VAE
         shuffle=False,
         **kwargs,
     ):
         super().__init__(fname_h5, key, transforms, inds, shuffle=shuffle, **kwargs)
         self.noise_scheduler = noise_scheduler
         self.label = label
+        self.vae = vae  # Store the VAE
         self.num_timesteps = noise_scheduler.config.num_train_timesteps
         print("len inds: ", len(self.inds))
 
@@ -55,19 +58,28 @@ class NoisyDataset(dataset.Dataset):
                 x = self.transforms(x)
 
         # Convert image to a torch tensor if it's not already
-        x = torch.tensor(x, dtype=torch.float32)
+        x = torch.tensor(x, dtype=torch.float32, device=self.vae.device)
+        print("x device: ", x.device)
+        print("vae device: ", self.vae.device)
+
+        # Encode image into latent space using VAE
+        with torch.no_grad():
+            posterior = self.vae.vae.encode(x).latent_dist
+            latents = posterior.sample()
+            latents = torch.sigmoid(latents)  # Ensure latents are in [0,1]
+        
 
         # Sample a random timestep
         timestep = torch.randint(0, self.num_timesteps, (1,), dtype=torch.int64)
 
         # Add noise to the image based on the timestep
-        noise = torch.randn_like(x).unsqueeze(0)
-        noisy_x = self.noise_scheduler.add_noise(x, noise, timestep).squeeze(0)
+        noise = torch.randn_like(latents).unsqueeze(0)
+        noisy_latents = self.noise_scheduler.add_noise(latents, noise, timestep).squeeze(0)
 
         # Prepare the label and timestep for return
         label = torch.tensor(self.label, dtype=torch.long)
 
-        return noisy_x, label, timestep.item()
+        return noisy_latents, label, timestep.item()
 
 
 class NoisyOADATDataModule(LightningDataModule):
@@ -77,6 +89,7 @@ class NoisyOADATDataModule(LightningDataModule):
         batch_size: int,
         indices_scd: str,
         indices_swfd: str,
+        vae,  # Pass the VAE
         noise_scheduler: DDIMScheduler = None,
         num_workers: int = 4,
     ) -> None:
@@ -85,6 +98,7 @@ class NoisyOADATDataModule(LightningDataModule):
         self.batch_size = batch_size
         self.num_workers = num_workers
         self.noise_scheduler = noise_scheduler
+        self.vae = vae  # Store the CVAE
         self.indices_swfd = indices_swfd
         self.indices_scd = indices_scd
 
@@ -101,6 +115,7 @@ class NoisyOADATDataModule(LightningDataModule):
             transforms=transforms,
             inds=indices,
             noise_scheduler=self.noise_scheduler,
+            vae=self.vae,  # Pass the VAE
             label=label,
         )
 
@@ -160,13 +175,13 @@ class NoisyOADATDataModule(LightningDataModule):
             num_workers=self.num_workers,
         )
 
-
 def main():
     # Parse command-line arguments
     args = parse_arguments()
 
     # Load training configuration from YAML
     config = load_config_from_yaml(args.config_path)
+    vae_config = load_config_from_yaml(config.vae_config_path)
 
     # Ensure dataset paths exist before loading
     if not os.path.exists(config.dataset.scd_train_indices):
@@ -181,12 +196,21 @@ def main():
     scd_train_indices = np.load(config.dataset.scd_train_indices)
     swfd_train_indices = np.load(config.dataset.swfd_train_indices)
 
+
+    # Load the trained VAE
+    vae_ckpt = os.path.join(vae_config.paths.vae_ckpt_dir, "last.ckpt")
+    if vae_config.cvae:
+        vae = CVAE.load_from_checkpoint(vae_ckpt, config=vae_config)
+    else:
+        vae = VAE.load_from_checkpoint(vae_ckpt, config=vae_config)
+
     # Initialize DataModule
     datamodule = NoisyOADATDataModule(
         data_path=args.oadat_dir,
         batch_size=config.batch_size,
         indices_scd=scd_train_indices,
         indices_swfd=swfd_train_indices,
+        vae=vae,  # Pass the VAE
         noise_scheduler=get_named_beta_schedule(
             config.noise_schedule, config.model.num_train_timesteps
         ),
