@@ -99,20 +99,28 @@ class DiffusionModel(LightningModule):
             device=self.device,
             dtype=torch.int64,
         )
-
         noisy_images = self.noise_scheduler.add_noise(clean_images, noises, timesteps)
-        predicted_v = self(noisy_images, timesteps).sample
+        
+        # Run forward pass
+        model_output = self(noisy_images, timesteps).sample
 
-        # Compute ground truth v
-        alpha_t = (self.noise_scheduler.alphas_cumprod[timesteps].sqrt().view(-1, 1, 1, 1))
-        sigma_t = ((1 - self.noise_scheduler.alphas_cumprod[timesteps]).sqrt().view(-1, 1, 1, 1))
-        ground_truth_v = alpha_t * noises - sigma_t * clean_images
+        # Depending on the prediction type, set the training target:
+        if self.noise_scheduler.config.prediction_type == "epsilon":
+            # When predicting epsilon, the target is just the noise
+            target = noises
+        elif self.noise_scheduler.config.prediction_type == "v_prediction":
+            # When predicting v, we compute the ground-truth v using the scheduler’s alphas
+            alpha_t = self.noise_scheduler.alphas_cumprod[timesteps].sqrt().view(-1, 1, 1, 1)
+            sigma_t = ((1 - self.noise_scheduler.alphas_cumprod[timesteps]).sqrt().view(-1, 1, 1, 1))
+            target = alpha_t * noises - sigma_t * clean_images
+        else:
+            raise ValueError(f"Unsupported prediction type: {self.noise_scheduler.config.prediction_type}")
 
-        # Compute loss
-        loss = self.loss_fn(predicted_v, ground_truth_v)
+        # Compute the loss (MSE)
+        loss = self.loss_fn(model_output, target)
         self.log("train_loss", loss, on_step=False, on_epoch=True, prog_bar=True)
 
-        # Log learning rate
+        # Log learning rate for monitoring
         lr = self.optimizers().param_groups[0]["lr"]
         self.log("lr", lr, on_step=False, on_epoch=True, prog_bar=True)
 
@@ -121,9 +129,7 @@ class DiffusionModel(LightningModule):
     def validation_step(self, batch: torch.Tensor, batch_idx: int) -> torch.Tensor:
         """Executes a validation step to evaluate the model's performance."""
         clean_images = batch
-        noises = torch.randn(
-            clean_images.shape, generator=self.generator, device=self.device
-        )
+        noises = torch.randn(clean_images.shape, generator=self.generator, device=self.device)
         timesteps = torch.randint(
             0,
             self.noise_scheduler.config.num_train_timesteps,
@@ -132,21 +138,23 @@ class DiffusionModel(LightningModule):
             generator=self.generator,
             device=self.device,
         )
-
         noisy_images = self.noise_scheduler.add_noise(clean_images, noises, timesteps)
-        predicted_v = self(noisy_images, timesteps).sample
+        model_output = self(noisy_images, timesteps).sample
 
-        # Compute ground truth
-        alpha_t = (self.noise_scheduler.alphas_cumprod[timesteps].sqrt().view(-1, 1, 1, 1))
-        sigma_t = ((1 - self.noise_scheduler.alphas_cumprod[timesteps]).sqrt().view(-1, 1, 1, 1))
-        ground_truth_v = alpha_t * noises - sigma_t * clean_images
+        if self.noise_scheduler.config.prediction_type == "epsilon":
+            target = noises
+        elif self.noise_scheduler.config.prediction_type == "v_prediction":
+            alpha_t = self.noise_scheduler.alphas_cumprod[timesteps].sqrt().view(-1, 1, 1, 1)
+            sigma_t = ((1 - self.noise_scheduler.alphas_cumprod[timesteps]).sqrt().view(-1, 1, 1, 1))
+            target = alpha_t * noises - sigma_t * clean_images
+        else:
+            raise ValueError(f"Unsupported prediction type: {self.noise_scheduler.config.prediction_type}")
 
-        # Compute loss
-        val_loss = self.loss_fn(predicted_v, ground_truth_v)
+        val_loss = self.loss_fn(model_output, target)
         self.log("val_loss", val_loss, on_step=False, on_epoch=True, prog_bar=True)
 
         return val_loss
-
+        
 ### Below is for debugging and visualization at the end of every n epochs ###
     def save_image(self, image: torch.Tensor, path: str, wandb_name: str) -> None:
         """Saves an image locally and logs it to WandB."""

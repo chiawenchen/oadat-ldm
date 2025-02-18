@@ -65,7 +65,7 @@ def plot_batch_results(images, indices, output_dir, filename, category):
 
     for ax, img, idx in zip(axs, images, indices):
         im = ax.imshow(img, cmap="gray", vmin=-0.2, vmax=1.0)
-        # ax.set_title(f"SCD_vc_idx={idx}")
+        # ax.set_title(f"SWFD_sc_idx={idx}")
         # fig.colorbar(im, ax=ax)
         ax.axis("off")
 
@@ -126,7 +126,7 @@ if __name__ == "__main__":
     ldm_config_path = args.config_path
     config = load_config_from_yaml(ldm_config_path)
     vae_config = load_config_from_yaml(config.paths.vae_config_path)
-    num_sampling = 25
+    num_sampling = 100
     forward_timestep_list = [0]
     backward_timestep_list = [0]
     sample_from_cvae_only = False
@@ -161,17 +161,22 @@ if __name__ == "__main__":
     noise_scheduler = diffusion_model.noise_scheduler
     noise_scheduler.set_timesteps(num_inference_steps=num_inference_steps)
 
-    # Prepare images
-    scd_fname_h5 = "SCD_RawBP.h5"  # "SWFD_semicircle_RawBP.h5" 
-    scd_key = "vc_BP" #"sc_BP"  "labels"
+    # Prepare images: uncomment to use SWFD data
+    # scd_fname_h5 = "SWFD_semicircle_RawBP.h5" 
+    # scd_key = "sc_BP"
     # swfd_train = np.load("/mydata/dlbirhoui/chia/oadat-ldm/config/train_sc_BP_indices.npy")
     # swfd_test = np.load("/mydata/dlbirhoui/chia/oadat-ldm/config/test_sc_BP_indices.npy")
-    scd_small_test_ind = np.load("/mydata/dlbirhoui/chia/oadat-ldm/config/scd_500px_blob_test_indices.npy")
     # batch_indices = np.random.choice(np.concatenate((swfd_train, swfd_test)), num_sampling, replace=False)
-    batch_indices = scd_small_test_ind
-    # batch_indices = np.array(
-    #     [19732, 19736, 19751, 19876, 19804, 19840, 19772, 19981, 19785, 19964, 19836, 19920, 19950, 19908, 19925, 19796]
-    # )
+
+    # Prepare images: uncomment to use SCD data
+    scd_fname_h5 = "SCD_RawBP.h5" 
+    scd_key = "vc_BP" # "labels"
+    # scd_small_test_ind = np.load("/mydata/dlbirhoui/chia/oadat-ldm/config/scd_500px_blob_test_indices.npy")
+    # scd_small_train_ind = np.load("/mydata/dlbirhoui/chia/oadat-ldm/config/scd_500px_blob_train_indices.npy")
+    # # Adjust batch_indices based on your needs
+    # batch_indices = np.random.choice(np.concatenate((scd_small_test_ind, scd_small_train_ind)), num_sampling, replace=False)
+    batch_indices = np.load("/mydata/dlbirhoui/chia/oadat-ldm/config/scd_500px_blob_test_indices.npy")
+
     print(f"Sampled from {scd_fname_h5}, key={scd_key}") # , indices={batch_indices}
 
     if scd_key == "labels":
@@ -187,7 +192,7 @@ if __name__ == "__main__":
 
     # Plot original images
     if "original" in plot_results:
-        filename = "swfd_original.png"
+        filename = "scd_original_25.png"
         plot_batch_results(scd_image_batch, batch_indices, output_dir, filename, "original")
 
     if sample_from_cvae_only and vae_config.cvae:

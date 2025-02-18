@@ -59,9 +59,12 @@ def plot_batch_results(images, indices, output_dir, filename, category, titles=N
     Plot and save the results for each image in the batch.
     If `titles` is provided (a list of strings), they are used to annotate the subplots.
     """
-    num_images = len(images)
-    fig, axs = plt.subplots(1, num_images, figsize=(4 * num_images, 8))
-    if num_images == 1:
+    # num_images = len(images)
+    # fig, axs = plt.subplots(1, num_images, figsize=(4 * num_images, 8))
+    num_cols = 10
+    fig, axs = plt.subplots(len(images) // num_cols, num_cols, figsize=(4 * num_cols, 8 * len(images) // num_cols))
+    axs = axs.ravel()
+    if len(images) == 1:
         axs = [axs]
 
     # Preprocess images if necessary (e.g., for display)
@@ -82,7 +85,7 @@ def plot_batch_results(images, indices, output_dir, filename, category, titles=N
             ax.set_title(titles[i])
         ax.axis("off")
 
-    plt.tight_layout(w_pad=0.5)
+    plt.tight_layout(w_pad=0.25, h_pad=0.25)
     output_path = os.path.join(output_dir, filename)
     plt.savefig(output_path, bbox_inches="tight")
     plt.close()
@@ -199,6 +202,7 @@ if __name__ == "__main__":
     output_dir = "./assets/report"
     config = load_config_from_yaml(
         "/mydata/dlbirhoui/chia/oadat-ldm/config/diffusion-model.yaml"
+        # "/mydata/dlbirhoui/chia/oadat-ldm/config/diffusion-model-epsilon.yaml"
     )
     clf_config = load_config_from_yaml(
         "/mydata/dlbirhoui/chia/oadat-ldm/config/classifier-guidance.yaml"
@@ -235,95 +239,16 @@ if __name__ == "__main__":
     param_combinations = [
         {
             "seed": config.seed,
-            "use_classifier_guidance": True,
-            "classifier_scale": 20.0,
-            "forward_timestep": 624,
-            "backward_timestep": 624,
-            "guidance_start": 624,
-            "guidance_stop": 499,
+            "use_classifier_guidance": False,
+            "classifier_scale": 0.0,
+            "forward_timestep": step,
+            "backward_timestep": step,
+            "guidance_start": None,
+            "guidance_stop": None,
             "two_stage": False,
-        },
-        {
-            "seed": config.seed,
-            "use_classifier_guidance": True,
-            "classifier_scale": 20.0,
-            "forward_timestep": 624,
-            "backward_timestep": 624,
-            "guidance_start": 624,
-            "guidance_stop": 374,
-            "two_stage": False,
-        },
-         {
-            "seed": config.seed,
-            "use_classifier_guidance": True,
-            "classifier_scale": 20.0,
-            "forward_timestep": 624,
-            "backward_timestep": 624,
-            "guidance_start": 624,
-            "guidance_stop": 249,
-            "two_stage": False,
-        },
-        {
-            "seed": config.seed,
-            "use_classifier_guidance": True,
-            "classifier_scale": 20.0,
-            "forward_timestep": 624,
-            "backward_timestep": 624,
-            "guidance_start": 624,
-            "guidance_stop": 124,
-            "two_stage": False,
-        },
-        {
-            "seed": config.seed,
-            "use_classifier_guidance": True,
-            "classifier_scale": 20.0,
-            "forward_timestep": 624,
-            "backward_timestep": 624,
-            "guidance_start": 624,
-            "guidance_stop": -1,
-            "two_stage": False,
-        },
-        {
-            "seed": config.seed,
-            "use_classifier_guidance": True,
-            "classifier_scale": 20.0,
-            "forward_timestep": 624,
-            "backward_timestep": 624,
-            "guidance_start": 499,
-            "guidance_stop": -1,
-            "two_stage": False,
-        },
-        {
-            "seed": config.seed,
-            "use_classifier_guidance": True,
-            "classifier_scale": 20.0,
-            "forward_timestep": 624,
-            "backward_timestep": 624,
-            "guidance_start": 374,
-            "guidance_stop": -1,
-            "two_stage": False,
-        },
-        {
-            "seed": config.seed,
-            "use_classifier_guidance": True,
-            "classifier_scale": 20.0,
-            "forward_timestep": 624,
-            "backward_timestep": 624,
-            "guidance_start": 249,
-            "guidance_stop": -1,
-            "two_stage": False,
-        },
-        {
-            "seed": config.seed,
-            "use_classifier_guidance": True,
-            "classifier_scale": 20.0,
-            "forward_timestep": 624,
-            "backward_timestep": 624,
-            "guidance_start": 124,
-            "guidance_stop": -1,
-            "two_stage": False,
-        }
+        } for step in range(990, 1000, 1)
     ]
+
 
     # If any combination requires classifier guidance, load the classifier once.
     if any(combo["use_classifier_guidance"] for combo in param_combinations):
@@ -344,7 +269,7 @@ if __name__ == "__main__":
     else:
         scd_fname_h5 = "SCD_RawBP.h5"
         scd_key = "vc_BP"
-        batch_indices = np.array([19992])
+        batch_indices = np.array([19960])
         base_image = prepare_images(scd_fname_h5, scd_key, batch_indices)
 
     # --- Process Each Parameter Combination ---
@@ -430,13 +355,13 @@ if __name__ == "__main__":
             f"Guidance: {'On' if combo['use_classifier_guidance'] else 'Off'}\n"
             f"Scale: {combo['classifier_scale']}\n"
             f"F: {current_forward + 1}, B: {current_backward + 1}\n"
-            f"Guidance [{guidance_start}, {guidance_stop}]\n"
+            f"Guidance [{guidance_start + 1}, {guidance_stop + 1}]\n"
             f"2-Stage: {'On' if two_stage else 'Off'}"
         )
         titles.append(title_str)
 
     # --- Plot the Combined Results ---
-    filename = generate_filename(model_name, f"scd={str(batch_indices[0])}_classifier_guidance_scale=20")
+    filename = generate_filename(model_name, f"scd={str(batch_indices[0])}_vpred")
     plot_batch_results(
         images_row,
         list(range(len(images_row))),
