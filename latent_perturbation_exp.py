@@ -55,7 +55,7 @@ def decode_latents(denoised_latents, labels, vae):
 if __name__ == "__main__":
     vae_checkpoint_path = "/mydata/dlbirhoui/chia/checkpoints/all/cvae-after-5000/last.ckpt"
 
-    output_dir = "./latent_space_visualization"
+    output_dir = "./assets/latent_space_visualization"
     os.makedirs(output_dir, exist_ok=True)
 
     # Initialize config

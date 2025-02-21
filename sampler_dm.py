@@ -54,14 +54,11 @@ def prepare_images(fname, key, indices):
     return torch.cat(images, dim=0)
 
 
-def plot_batch_results(images, indices, output_dir, filename, category, titles=None):
+def plot_batch_results(images, indices, output_dir, filename, category, num_cols, titles=None):
     """
     Plot and save the results for each image in the batch.
     If `titles` is provided (a list of strings), they are used to annotate the subplots.
     """
-    # num_images = len(images)
-    # fig, axs = plt.subplots(1, num_images, figsize=(4 * num_images, 8))
-    num_cols = 10
     fig, axs = plt.subplots(len(images) // num_cols, num_cols, figsize=(4 * num_cols, 8 * len(images) // num_cols))
     axs = axs.ravel()
     if len(images) == 1:
@@ -239,15 +236,17 @@ if __name__ == "__main__":
     param_combinations = [
         {
             "seed": config.seed,
-            "use_classifier_guidance": False,
-            "classifier_scale": 0.0,
-            "forward_timestep": step,
-            "backward_timestep": step,
-            "guidance_start": None,
-            "guidance_stop": None,
+            "use_classifier_guidance": True,
+            "classifier_scale": scale,
+            "forward_timestep": 600,
+            "backward_timestep": 600,
+            "guidance_start": 600,
+            "guidance_stop": -1,
             "two_stage": False,
-        } for step in range(990, 1000, 1)
+        } for scale in range(0, 35, 5)
     ]
+    num_cols = 7
+    filename_info = "diffscale_fullguide"
 
 
     # If any combination requires classifier guidance, load the classifier once.
@@ -351,23 +350,24 @@ if __name__ == "__main__":
         # Save the first (or only) image from the batch.
         images_row.append(final_image[0])
         title_str = (
-            f"Seed: {current_seed}\n"
-            f"Guidance: {'On' if combo['use_classifier_guidance'] else 'Off'}\n"
+            # f"Seed: {current_seed}\n"
+            # f"Guidance: {'On' if combo['use_classifier_guidance'] else 'Off'}\n"
             f"Scale: {combo['classifier_scale']}\n"
-            f"F: {current_forward + 1}, B: {current_backward + 1}\n"
-            f"Guidance [{guidance_start + 1}, {guidance_stop + 1}]\n"
-            f"2-Stage: {'On' if two_stage else 'Off'}"
+            # f"F: {current_forward + 1}, B: {current_backward + 1}\n"
+            # f"Guidance [{guidance_start + 1}, {guidance_stop + 1}]\n"
+            # f"2-Stage: {'On' if two_stage else 'Off'}"
         )
         titles.append(title_str)
 
     # --- Plot the Combined Results ---
-    filename = generate_filename(model_name, f"scd={str(batch_indices[0])}_vpred")
+    filename = generate_filename(model_name, f"scd={str(batch_indices[0])}_{filename_info}")
     plot_batch_results(
         images_row,
         list(range(len(images_row))),
         output_dir,
         filename,
         "denoised",
+        num_cols,
         titles=titles,
     )
     print(f"Saved combined result to {os.path.join(output_dir, filename)}")

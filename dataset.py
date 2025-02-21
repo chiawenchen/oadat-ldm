@@ -92,13 +92,3 @@ class Dataset:
         if self.label is not None:
             return x, self.label
         return x
-
-    ## This is not working if using torch.utils.data.DataLoader since the dataloader use __getitem__ to fetch data:
-    # def __iter__(self):
-    #     print("Using __iter__ of the customized dataset!")
-    #     inds = np.copy(self.inds)
-    #     if self.shuffle:
-    #         self.prng.shuffle(inds)
-    #     for i in inds:
-    #         s = self.__getitem__(index=i)
-    #         yield s
