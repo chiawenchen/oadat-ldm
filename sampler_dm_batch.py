@@ -282,6 +282,7 @@ if __name__ == "__main__":
 
     if 'denoised' not in plot_results:
         print('skip sampling!')
+        return
 
     # Generate filename
     filename = generate_filename(

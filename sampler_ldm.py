@@ -54,8 +54,10 @@ def prepare_images(fname, key, indices, pre_transforms):
 
 def plot_batch_results(images, indices, output_dir, filename, category):
     """Plot and save the results for each image in the batch."""
-    # Create a 10x10 grid for the 100 images
-    fig, axs = plt.subplots(5, 5, figsize=(4 * 5, 4 * 5))
+    # Create a grid
+    num_row = 10
+    num_col = 10
+    fig, axs = plt.subplots(num_row, num_col, figsize=(4 * num_col, 4 * num_row))
 
     # Preprocess images based on category
     images = [torch.clamp((((img + 1.0) * 1.2 / 2.0) - 0.2), min=-0.2, max=1.0) for img in images]
@@ -119,12 +121,9 @@ def decode_latents(denoised_latents, labels, vae):
 
 # Main Execution
 if __name__ == "__main__":
-    # Parse command-line arguments
-    args = parse_arguments()
-
-    # Customizable settings
-    ldm_config_path = args.config_path
-    config = load_config_from_yaml(ldm_config_path)
+    config = load_config_from_yaml(
+        "/mydata/dlbirhoui/chia/oadat-ldm/config/latent-diffusion-model-cvae-after-5000-small.yaml"
+    )
     vae_config = load_config_from_yaml(config.paths.vae_config_path)
     num_sampling = 100
     forward_timestep_list = [0]

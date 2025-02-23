@@ -343,6 +343,9 @@ lightning_logs
 wandb
 *.png
 
+# Allow PNG files in assets/report/
+!assets/report/*.png
+
 # taming
 *vgg.pth
 *taming-transformers

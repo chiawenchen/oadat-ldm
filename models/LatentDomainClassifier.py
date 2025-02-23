@@ -42,44 +42,44 @@ class Classifier(nn.Module):
         output = self.classifier(z)
         return output
 
-class SimpleClassifier(nn.Module):
-    """ Classifier with CNN """
-    def __init__(self, latent_channels):
-        super(SimpleClassifier, self).__init__()
-        self.feature_extractor = nn.Sequential(
-            nn.Conv2d(latent_channels, 64, kernel_size=5),
-            nn.BatchNorm2d(64),
-            nn.MaxPool2d(2),
-            nn.ReLU(),
-            nn.Conv2d(64, 50, kernel_size=5),
-            nn.BatchNorm2d(50),
-            nn.Dropout2d(),
-            nn.MaxPool2d(2),
-            nn.ReLU(),
-        )
-        self.classifier = nn.Sequential(
-            nn.Linear(50 * 5 * 5, 100),
-            nn.BatchNorm1d(100),
-            nn.ReLU(),
-            nn.Linear(100, 2),
-        )
+# class SimpleClassifier(nn.Module):
+#     """ Classifier with CNN """
+#     def __init__(self, latent_channels):
+#         super(SimpleClassifier, self).__init__()
+#         self.feature_extractor = nn.Sequential(
+#             nn.Conv2d(latent_channels, 64, kernel_size=5),
+#             nn.BatchNorm2d(64),
+#             nn.MaxPool2d(2),
+#             nn.ReLU(),
+#             nn.Conv2d(64, 50, kernel_size=5),
+#             nn.BatchNorm2d(50),
+#             nn.Dropout2d(),
+#             nn.MaxPool2d(2),
+#             nn.ReLU(),
+#         )
+#         self.classifier = nn.Sequential(
+#             nn.Linear(50 * 5 * 5, 100),
+#             nn.BatchNorm1d(100),
+#             nn.ReLU(),
+#             nn.Linear(100, 2),
+#         )
 
-    def forward(self, z):
-        z = self.feature_extractor(z)
-        z = z.view(z.size(0), -1)  # Flatten
-        output = self.classifier(z)
-        return output
+#     def forward(self, z):
+#         z = self.feature_extractor(z)
+#         z = z.view(z.size(0), -1)  # Flatten
+#         output = self.classifier(z)
+#         return output
 
-class SimpleMLP(nn.Module):
-    """ Classifer with MLP only """
-    def __init__(self, latent_dim, num_classes):
-        super(SimpleMLP, self).__init__()
-        self.fc = nn.Sequential(
-            nn.Linear(latent_dim, 128),
-            nn.ReLU(),
-            nn.Linear(128, num_classes)
-        )
+# class SimpleMLP(nn.Module):
+#     """ Classifer with MLP only """
+#     def __init__(self, latent_dim, num_classes):
+#         super(SimpleMLP, self).__init__()
+#         self.fc = nn.Sequential(
+#             nn.Linear(latent_dim, 128),
+#             nn.ReLU(),
+#             nn.Linear(128, num_classes)
+#         )
 
-    def forward(self, x):
-        return self.fc(x)
+#     def forward(self, x):
+#         return self.fc(x)
 

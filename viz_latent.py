@@ -88,7 +88,7 @@ if __name__ == "__main__":
     indices_scd = np.load(config.dataset.scd_train_indices)
     indices_swfd = np.load(config.dataset.swfd_train_indices)
 
-    # Randomly pick 32 indices from each domain
+    # Randomly pick indices from each domain
     scd_indices = np.random.choice(indices_scd, 600, replace=False)
     swfd_indices = np.random.choice(indices_swfd, 600, replace=False)
 
