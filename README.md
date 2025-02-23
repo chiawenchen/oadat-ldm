@@ -79,6 +79,8 @@ param_combinations = [
 num_cols = 7
 filename_info = "diffscale_fullguide"
 ```
+Demo:
+![the diffusion model](assets/report/dm_scd=19960_best_timestep.png)
 
 ### Sampled with the Diffusion Model in Batch
 
@@ -117,6 +119,9 @@ You can also plot the noise-injected images and the original synthetic images as
 plot_results = ["denoised", "original", "noisy"]
 ```
 This will generate a grid (n by 10) depending on the number of images. If generating a large grid at once is too memory-intensive, use the `paste.py` script to combine two grids (one on top of the other).
+
+Demo:
+![the diffusion model](assets/report/dm_f=500_b=500_seed=42_denoised.png)
 
 ### Sampled with the Latent Diffusion Model in Batch
 
