@@ -202,7 +202,7 @@ python train_latent_diffusion.py --oadat_dir /mydata/dlbirhoui/firat/OADAT --gpu
 
 ## Checkpoints
 
-Checkpoints are currently saved in `/mydata/dlbirhoui/chia/checkpoints/all` (as of 21/02/2025).
+Checkpoints are currently saved in `/mydata/dlbirhoui/shared/chia/checkpoints/all` in the Runai of SDSC (as of 01/03/2025).
 
 ---
 

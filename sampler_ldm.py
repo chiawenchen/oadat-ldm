@@ -122,12 +122,12 @@ def decode_latents(denoised_latents, labels, vae):
 # Main Execution
 if __name__ == "__main__":
     config = load_config_from_yaml(
-        "/mydata/dlbirhoui/chia/oadat-ldm/config/latent-diffusion-model-cvae-after-5000-small.yaml"
+        "/mydata/dlbirhoui/chia/oadat-ldm/config/latent-diffusion-model-vae-after-2500.yaml"
     )
     vae_config = load_config_from_yaml(config.paths.vae_config_path)
     num_sampling = 100
     forward_timestep_list = [0]
-    backward_timestep_list = [0]
+    backward_timestep_list = [25]
     sample_from_cvae_only = False
     plot_results = ["denoised"] # "original"
 

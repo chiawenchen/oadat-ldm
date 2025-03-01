@@ -28,7 +28,7 @@ training_config:
   # Paths and directories
   paths:
     sample_dir: "/mydata/dlbirhoui/chia/samples/cvae-after-2500"
-    vae_ckpt_dir: "/mydata/dlbirhoui/chia/checkpoints/all/cvae-after-2500"
+    vae_ckpt_dir: "/mydata/dlbirhoui/shared/chia/checkpoints/all/cvae-after-2500"
 
   # Weights for classifier losses
   weights:

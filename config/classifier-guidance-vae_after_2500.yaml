@@ -39,4 +39,4 @@ training_config:
     filename_format: "{epoch:02d}-{val_loss:.4f}"
 
   # Paths and directories
-  ckpt_dir: "/mydata/dlbirhoui/chia/checkpoints/all/classifier-guidance"
+  ckpt_dir: "/mydata/dlbirhoui/shared/chia/checkpoints/all/classifier-guidance"

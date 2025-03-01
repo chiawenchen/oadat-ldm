@@ -22,7 +22,7 @@ training_config:
 
   # Paths and directories
   paths:
-    output_dir: "/mydata/dlbirhoui/chia/"  # Directory to save models, logs, and checkpoints
+    output_dir: "/mydata/dlbirhoui/shared/chia/"  # Directory to save models, logs, and checkpoints
     sample_dir: "/mydata/dlbirhoui/chia/samples/diffusion-model"
     fixed_image_paths:
       swfd: "/mydata/dlbirhoui/chia/samples/diffusion-model/swfd_fixed_noisy_images"

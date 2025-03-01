@@ -39,5 +39,5 @@ training_config:
     filename_format: "{epoch:02d}-{val_loss:.4f}"
 
   # Paths and directories
-  ckpt_dir: "/mydata/dlbirhoui/chia/checkpoints/all/classifier-guidance-cvae_after_5000"
+  ckpt_dir: "/mydata/dlbirhoui/shared/chia/checkpoints/all/classifier-guidance-cvae_after_5000"
   vae_config_path: "/mydata/dlbirhoui/chia/oadat-ldm/config/cvae_after_5000.yaml" 

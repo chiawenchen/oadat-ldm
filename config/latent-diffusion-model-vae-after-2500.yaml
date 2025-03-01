@@ -26,12 +26,12 @@ training_config:
 
   # Paths and directories
   paths:
-    output_dir: "/mydata/dlbirhoui/chia/"
+    output_dir: "/mydata/dlbirhoui/shared/chia/"
     sample_dir: "/mydata/dlbirhoui/chia/samples/latent-diffusion-model"
     fixed_image_paths:
       swfd: "/mydata/dlbirhoui/chia/samples/latent-diffusion-model/swfd_fixed_noisy_images"
       scd: "/mydata/dlbirhoui/chia/samples/latent-diffusion-model/scd_fixed_noisy_images"
-    vae_ckpt_dir: "/mydata/dlbirhoui/chia/checkpoints/all/vae_after_2500/last.ckpt"
+    vae_ckpt_dir: "/mydata/dlbirhoui/shared/chia/checkpoints/all/vae_after_2500/last.ckpt"
     vae_config_path: "/mydata/dlbirhoui/chia/oadat-ldm/config/vae_after_2500.yaml"
 
   # Logging and monitoring
