@@ -1,6 +1,13 @@
-# OADAT-LDM
+# OADAT-LDM: Latent Diffusion Models for Domain Adaptation in Optoacoustic Imaging
+### Abstract:
+Optoacoustic (OA) imaging is a non-invasive biomedical imaging technique with high potential, providing optical contrast complementary to ultrasound by stimulating tissue with laser pulses. Synthetic OA data are easier to generate and annotate, but they often lack the detailed anatomical features and realistic noise patterns found in experimental OA images. This gap limits the usefulness of synthetic data in developing OA image processing methods. In this study, we investigate diffusion-based domain adaptation strategies, using diffusion, classifier-guided diffusion, latent diffusion, and conditional variational autoencoder (CVAE) approaches to transform synthetic OA images into experimental-like images. Our methods are evaluated on the standardized public OA dataset, focusing on adding key features such as skin gradients, tissue textures, vessel details, and acquisition-induced noise. Our image-space diffusion model consistently produces high-fidelity adaptations that preserve anatomical structures and match experimental characteristics. These results offer a solid framework for enhancing the realism of synthetic OA data, potentially reducing the need for large clinical datasets for model training, and supporting the advancement of OA image processing algorithms.[^2]
 
-OADAT-LDM provides diffusion-based methods to adapt synthetic forearm optoacoustic data into experimental-like data, as presented in *Latent Diffusion Model for Domain Adaptation in Optoacoustic Data*. The dataset used in this work, OADAT, is publicly available and described in *[OADAT: Experimental and Synthetic Clinical Optoacoustic Data for Standardized Image Processing](https://openreview.net/forum?id=BVi6MhKO0G)*.
+[^2]: This is the paper of my semester project. \
+co-supervisor: Firat Ozdemir \
+supervisor: Prof. Fernando Perez-Cruz.
+
+
+This repo provides diffusion-based methods to adapt synthetic forearm optoacoustic data into experimental-like data. The dataset used in this work, OADAT, is publicly available and described in *[OADAT: Experimental and Synthetic Clinical Optoacoustic Data for Standardized Image Processing](https://openreview.net/forum?id=BVi6MhKO0G)*.
 
 ---
 
