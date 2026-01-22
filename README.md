@@ -9,8 +9,9 @@ supervisor: Prof. Fernando Perez-Cruz.
 
 This repo provides diffusion-based methods to adapt synthetic forearm optoacoustic data into experimental-like data. The dataset used in this work, OADAT, is publicly available and described in *[OADAT: Experimental and Synthetic Clinical Optoacoustic Data for Standardized Image Processing](https://openreview.net/forum?id=BVi6MhKO0G)*.
 
----
+The whole pdf paper: *[Latent Diffusion Models for Domain Adaptation in Optoacoustic Imaging](semester_project_paper_chia_wen_chen_main_content.pdf)*
 
+---
 ## Environment
 
 ```bash
